@@ -11,29 +11,18 @@ from mplfinance.original_flavor import candlestick2_ohlc
 from matplotlib.ticker import FormatStrFormatter
 import argparse
 from p_name import p_list
+from strategy import signal
+
+k_limit = 20
+rsi_limit = 20
 
 class stock:
-    def __init__(self, p_SN):
+    def __init__(self, p_SN, p_name):
         pd.set_option('display.unicode.ambiguous_as_wide', True)
         pd.set_option('display.unicode.east_asian_width', True)
         pd.set_option('display.width', 180)
         self.p_SN = p_SN
-        self.p_name = "xxx"
-        if p_SN == 'all':
-            for i in p_list.split('\n')[2:-1]:
-                self.p_SN = i.split(' ')[0]
-                self.p_name = i.split(' ')[1]
-                print(self.p_SN, self.p_name)
-                self.Get_Data()
-            return
-        
-        for i in p_list.split('\n')[2:-1]:
-            if p_SN == i.split(' ')[0]:
-                self.p_SN = i.split(' ')[0]
-                self.p_name = i.split(' ')[1]
-                print(self.p_SN, self.p_name)
-                self.Get_Data()
-
+        self.p_name = p_name
         # today = dt.date.today()
         # start_day = today - dt.timedelta(days = p_count)
         # self.data = ak.stock_zh_a_hist(symbol=p_SN)
@@ -49,6 +38,7 @@ class stock:
                 macd, diff = self.Get_MACD()
                 boll_u, boll_m, boll_l = self.Get_BOLL()
                 K, D, J = self.Get_KDJ()
+                rsi = self.Get_Rsi()
                 for i in range(self.res.index.size, len(self.data)):
                     self.res.loc[i,'date'] = self.data.日期[i]
                     self.res.loc[i,'value'] = self.data.收盘[i]
@@ -62,8 +52,10 @@ class stock:
                     self.res.loc[i,'K'] = K[i]
                     self.res.loc[i,'D'] = D[i]
                     self.res.loc[i,'J'] = J[i]
+                    self.res.loc[i,'rsi'] = rsi[i]
                 self.res.to_csv(file_name, index=False, encoding='utf-8-sig')
-                print('update csv')
+                if self.res.index.size != len(self.data):
+                    print('update csv')
         else:
             self.data = ak.stock_zh_a_hist(symbol=self.p_SN)
             self.res = pd.DataFrame()
@@ -74,13 +66,26 @@ class stock:
             self.res['macd'], self.res['diff'] = self.Get_MACD()
             self.res['boll_u'], self.res['boll_m'], self.res['boll_l'] = self.Get_BOLL()
             self.res['K'], self.res['D'], self.res['J'] = self.Get_KDJ()
+            self.res['rsi'] = self.Get_Rsi()
             self.res.to_csv(file_name, index=False, encoding='utf-8-sig')
-
 
         # 获取单个股票的近30日数据
         # self.df3 = self.data.reset_index().iloc[-p_count:,:7]  #取过去30天数据
         # self.df3 = self.df3.dropna(how='any').reset_index(drop=True) #去除空值且从零开始编号索引
         # self.df3 = self.df3.sort_values(by='日期', ascending=True)
+
+    def Get_SomeData(self, p_CT):
+        if p_CT == 'kdj':
+            n_val = self.res.loc[self.res.index == self.res.index.size-1]
+            if n_val.K.values < k_limit:
+                print(self.p_SN, self.p_name)
+                print(n_val)
+
+        if p_CT == 'rsi':
+            n_val = self.res.loc[self.res.index == self.res.index.size-1]
+            if n_val.rsi.values < rsi_limit:
+                print(self.p_SN, self.p_name)
+                print(n_val)
 
     def Show_plt(self):
         fig, ax = plt.subplots(1, 1, figsize=(8,3), dpi=200)
@@ -147,6 +152,25 @@ class stock:
         # self.res['boll_m'] = mid
         # self.res['boll_l'] = lower
         return upper, mid, lower
+    
+    def Get_Rsi(self, window=14):
+        """Compute RSI indicator with proper handling of initial values"""
+        delta = self.data['收盘'].diff()
+        gain = delta.copy()
+        loss = delta.copy()
+
+        gain[gain < 0] = 0
+        loss[loss > 0] = 0
+        loss = abs(loss)
+
+        # First value is sum of gains or losses
+        avg_gain = gain.rolling(window=window, min_periods=1).mean()
+        avg_loss = loss.rolling(window=window, min_periods=1).mean()
+
+        rs = avg_gain / (avg_loss + 1e-6)  # Avoid division by zero
+        rsi = 100 - (100 / (1 + rs))
+
+        return rsi
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -154,8 +178,30 @@ if __name__ == "__main__":
     # parser.add_argument('--cnt', type=int, default = 90)
     # parser.add_argument('--dd', type=int, default = 15)
     # parser.add_argument('--kp', type=int, default = 9)
+    parser.add_argument('--ct', type=str, default = '')
+    parser.add_argument('--st', type=bool, default = False)
     args = parser.parse_args()
-    st = stock(args.sn)
+    if args.sn == 'all':
+        for i in p_list.split('\n')[2:-1]:
+            p_SN = i.split(' ')[0]
+            p_name = i.split(' ')[1]
+            st = stock(p_SN, p_name)
+            # print(self.p_SN, self.p_name)
+            st.Get_Data()
+    for i in p_list.split('\n')[2:-1]:
+        if args.sn == i.split(' ')[0]:
+            p_SN = i.split(' ')[0]
+            p_name = i.split(' ')[1]
+            st = stock(p_SN, p_name)
+            # print(self.p_SN, self.p_name)
+            st.Get_Data()
+    st.Get_SomeData(args.ct)
+    if args.st:
+        print(st.p_name)
+        sig = signal()
+        sig.generate_signals(st.res)
+        print(sig.res)
+    # st = stock(args.sn, args.ct, args.st)
     # st.Show_plt()
     # st.Get_MACD()
     # st.Get_BOLL()
