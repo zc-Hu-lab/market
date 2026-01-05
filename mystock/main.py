@@ -35,10 +35,11 @@ class stock:
             self.res = pd.read_csv(file_name, encoding="utf-8-sig")
             if self.res['date'][self.res.index.size-1] != str(dt.date.today()):
                 self.data = ak.stock_zh_a_hist(symbol=self.p_SN)
-                macd, diff = self.Get_MACD()
-                boll_u, boll_m, boll_l = self.Get_BOLL()
-                K, D, J = self.Get_KDJ()
-                rsi = self.Get_Rsi()
+                update_size = self.res.index.size
+                macd, diff = self.Get_MACD(update_size)
+                boll_u, boll_m, boll_l = self.Get_BOLL(update_size)
+                K, D, J = self.Get_KDJ(update_size)
+                rsi = self.Get_Rsi(update_size)
                 for i in range(self.res.index.size, len(self.data)):
                     self.res.loc[i,'date'] = self.data.日期[i]
                     self.res.loc[i,'value'] = self.data.收盘[i]
@@ -54,8 +55,8 @@ class stock:
                     self.res.loc[i,'J'] = J[i]
                     self.res.loc[i,'rsi'] = rsi[i]
                 self.res.to_csv(file_name, index=False, encoding='utf-8-sig')
-                if self.res.index.size != len(self.data):
-                    print('update csv')
+                if update_size != len(self.data):
+                    print(self.p_SN, self.p_name ,' update csv')
         else:
             self.data = ak.stock_zh_a_hist(symbol=self.p_SN)
             self.res = pd.DataFrame()
@@ -73,6 +74,18 @@ class stock:
         # self.df3 = self.data.reset_index().iloc[-p_count:,:7]  #取过去30天数据
         # self.df3 = self.df3.dropna(how='any').reset_index(drop=True) #去除空值且从零开始编号索引
         # self.df3 = self.df3.sort_values(by='日期', ascending=True)
+
+    def Check_Data(self):
+        file_name = f'data/{self.p_SN}.csv'
+        if Path(file_name).is_file():
+            self.data = ak.stock_zh_a_hist(symbol=self.p_SN)
+            # with pd.read_csv(file_name, encoding="utf-8-sig") as res:
+            res = pd.read_csv(file_name, encoding="utf-8-sig")
+            rsi = self.Get_Rsi()
+            if not set(self.data['收盘']) == set(res.value):
+                user_input = input("if rm the csv : y / n: ")
+                if user_input.lower() == 'y':
+                    os.system('rm %s'%file_name)
 
     def Get_SomeData(self, p_CT):
         if p_CT == 'kdj':
@@ -175,32 +188,32 @@ class stock:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--sn', type=str, default = '000001')
+    parser.add_argument('--ck', type=str, default = '000001')
     # parser.add_argument('--cnt', type=int, default = 90)
     # parser.add_argument('--dd', type=int, default = 15)
     # parser.add_argument('--kp', type=int, default = 9)
     parser.add_argument('--ct', type=str, default = '')
     parser.add_argument('--st', type=bool, default = False)
     args = parser.parse_args()
-    if args.sn == 'all':
-        for i in p_list.split('\n')[2:-1]:
-            p_SN = i.split(' ')[0]
-            p_name = i.split(' ')[1]
-            st = stock(p_SN, p_name)
-            # print(self.p_SN, self.p_name)
-            st.Get_Data()
     for i in p_list.split('\n')[2:-1]:
-        if args.sn == i.split(' ')[0]:
+        if args.sn == 'all' or args.sn == i.split(' ')[0]:
             p_SN = i.split(' ')[0]
             p_name = i.split(' ')[1]
             st = stock(p_SN, p_name)
             # print(self.p_SN, self.p_name)
             st.Get_Data()
-    st.Get_SomeData(args.ct)
-    if args.st:
-        print(st.p_name)
-        sig = signal()
-        sig.generate_signals(st.res)
-        print(sig.res)
+            st.Get_SomeData(args.ct)
+            if args.st:
+                print(st.p_name)
+                sig = signal()
+                sig.generate_signals(st.res)
+                print(sig.res)
+        if args.ck == 'all' or args.ck == i.split(' ')[0]:
+            p_SN = i.split(' ')[0]
+            p_name = i.split(' ')[1]
+            st = stock(p_SN, p_name)
+            # print(self.p_SN, self.p_name)
+            st.Check_Data()
     # st = stock(args.sn, args.ct, args.st)
     # st.Show_plt()
     # st.Get_MACD()
