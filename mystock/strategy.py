@@ -2,6 +2,7 @@
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 
 class signal:
     def __init__(self):
@@ -53,7 +54,7 @@ class signal:
         return
     # df = generate_signals(df)
     
-    def backtest_strategy(df, initial_capital=100000, commission_rate=0.001):
+    def backtest_strategy(self, df, initial_capital=100000, commission_rate=0.001):
         """
         回测MACD策略
         """
@@ -64,14 +65,14 @@ class signal:
         current_position = 0
         
         for i in range(len(df)):
-            if df.iloc[i]['signal'] == 1:  # 买入信号
+            if df.loc[i,'signal'] == 1:  # 买入信号
                 current_position = 1
-            elif df.iloc[i]['signal'] == -1:  # 卖出信号
+            elif df.loc[i,'signal'] == -1:  # 卖出信号
                 current_position = 0
-            df.iloc[i, df.columns.get_loc('position')] = current_position
+            df.loc[i, df.columns.get_loc('position')] = current_position
         
         # 计算收益率
-        df['returns'] = df['close'].pct_change()
+        df['returns'] = df['value'].pct_change()
         df['strategy_returns'] = df['returns'] * df['position'].shift(1)
         
         # 考虑交易成本
@@ -83,10 +84,11 @@ class signal:
         df['cum_strategy_returns'] = (1 + df['strategy_returns_net']).cumprod() - 1
         df['cum_market_returns'] = (1 + df['returns']).cumprod() - 1
         
+        self.res = df
         return df
     # df = backtest_strategy(df)
     
-    def calculate_performance_metrics(df):
+    def calculate_performance_metrics(self, df):
         """
         计算策略绩效指标
         """
@@ -139,6 +141,7 @@ class signal:
             '总交易次数': total_trades
         }
         
+        self.metrics = metrics
         return metrics
 
     # # 计算绩效指标
@@ -147,7 +150,7 @@ class signal:
     # for key, value in performance.items():
     #     print(f"{key}: {value}")
 
-    def plot_price_and_macd(df, figsize=(15, 10)):
+    def plot_price_and_macd(self, df, figsize=(15, 10)):
         """
         绘制价格走势和MACD指标图
         """
@@ -165,7 +168,7 @@ class signal:
         ax1.scatter(sell_points.index, sell_points['close'], 
                 color='green', marker='v', s=100, label='卖出信号', zorder=5)
         
-        ax1.set_title('平安银行股价走势与MACD交易信号', fontsize=16)
+        ax1.set_title('股价走势与MACD交易信号', fontsize=16)
         ax1.set_ylabel('价格（元）', fontsize=12)
         ax1.legend()
         ax1.grid(True, alpha=0.3)
@@ -188,7 +191,7 @@ class signal:
     # plot_price_and_macd(df)
     # plt.show()
 
-    def plot_returns_comparison(df, figsize=(12, 8)):
+    def plot_returns_comparison(self, df, figsize=(12, 8)):
         """
         绘制策略收益与市场收益对比图
         """
@@ -211,7 +214,7 @@ class signal:
     # plot_returns_comparison(df)
     # plt.show()
 
-    def plot_returns_distribution(df, figsize=(12, 5)):
+    def plot_returns_distribution(self, df, figsize=(12, 5)):
         """
         绘制收益分布图
         """

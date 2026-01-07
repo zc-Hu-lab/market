@@ -16,6 +16,16 @@ from strategy import signal
 k_limit = 20
 rsi_limit = 20
 
+KDJ_N = 9
+KDJ_M1 = 3
+KDJ_M2 = 3
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+BOLL_N = 20
+BOLL_K = 2
+RSI_WINDOW = 14
+
 class stock:
     def __init__(self, p_SN, p_name):
         pd.set_option('display.unicode.ambiguous_as_wide', True)
@@ -36,24 +46,28 @@ class stock:
             if self.res['date'][self.res.index.size-1] != str(dt.date.today()):
                 self.data = ak.stock_zh_a_hist(symbol=self.p_SN)
                 update_size = self.res.index.size
-                macd, diff = self.Get_MACD(update_size)
-                boll_u, boll_m, boll_l = self.Get_BOLL(update_size)
-                K, D, J = self.Get_KDJ(update_size)
-                rsi = self.Get_Rsi(update_size)
+                # macd, diff = self.Get_MACD()
+                # boll_u, boll_m, boll_l = self.Get_BOLL()
+                # K, D, J = self.Get_KDJ()
+                # rsi = self.Get_Rsi()
                 for i in range(self.res.index.size, len(self.data)):
                     self.res.loc[i,'date'] = self.data.日期[i]
                     self.res.loc[i,'value'] = self.data.收盘[i]
                     self.res.loc[i,'5--day'] = self.data.收盘[i-5:].rolling(5).mean()[i]
                     self.res.loc[i,'10-day'] = self.data.收盘[i-10:].rolling(10).mean()[i]
-                    self.res.loc[i,'macd'] = macd[i]
-                    self.res.loc[i,'diff'] = diff[i]
-                    self.res.loc[i,'boll_u'] = boll_u[i]
-                    self.res.loc[i,'boll_m'] = boll_m[i]
-                    self.res.loc[i,'boll_l'] = boll_l[i]
-                    self.res.loc[i,'K'] = K[i]
-                    self.res.loc[i,'D'] = D[i]
-                    self.res.loc[i,'J'] = J[i]
-                    self.res.loc[i,'rsi'] = rsi[i]
+                    # self.res.loc[i,'macd'] = macd[i]
+                    # self.res.loc[i,'diff'] = diff[i]
+                    # self.res.loc[i,'boll_u'] = boll_u[i]
+                    # self.res.loc[i,'boll_m'] = boll_m[i]
+                    # self.res.loc[i,'boll_l'] = boll_l[i]
+                    # self.res.loc[i,'K'] = K[i]
+                    # self.res.loc[i,'D'] = D[i]
+                    # self.res.loc[i,'J'] = J[i]
+                    # self.res.loc[i,'rsi'] = rsi[i]
+                self.res['macd'], self.res['diff'] = self.Get_MACD()
+                self.res['boll_u'], self.res['boll_m'], self.res['boll_l'] = self.Get_BOLL()
+                self.res['K'], self.res['D'], self.res['J'] = self.Get_KDJ()
+                self.res['rsi'] = self.Get_Rsi()
                 self.res.to_csv(file_name, index=False, encoding='utf-8-sig')
                 if update_size != len(self.data):
                     print(self.p_SN, self.p_name ,' update csv')
@@ -132,7 +146,7 @@ class stock:
 
         plt.show()
     
-    def Get_KDJ(self, N=9, M1=3, M2=3):
+    def Get_KDJ(self, N=KDJ_N, M1=KDJ_M1, M2=KDJ_M2):
         # 计算短期RSV（相对强弱值）：RSV = (C - Ln) / (Hn - Ln) * 100 其中，C是当前收盘价，Ln是n天内的最低价，Hn是n天内的最高价。
         data = self.data.copy()
         today = dt.date.today()
@@ -147,7 +161,7 @@ class stock:
         # self.res['J'] = data['J']
         return data['K'],data['D'],data['J']
 
-    def Get_MACD(self, n_fast=12, n_slow=26, n_signal=9):
+    def Get_MACD(self, n_fast=MACD_FAST, n_slow=MACD_SLOW, n_signal=MACD_SIGNAL):
         ema12 = self.data['收盘'].ewm(span=n_fast, adjust=False).mean()
         ema26 = self.data['收盘'].ewm(span=n_slow, adjust=False).mean()
         diff = ema12 - ema26
@@ -157,7 +171,7 @@ class stock:
         # self.res['diff'] = diff
         return macd, diff
 
-    def Get_BOLL(self, n = 20, k = 2):
+    def Get_BOLL(self, n = BOLL_N, k = BOLL_K):
         mid = self.data['收盘'].rolling(n).mean()
         upper = mid + k * self.data['收盘'].rolling(n).std()
         lower = mid - k * self.data['收盘'].rolling(n).std()
@@ -166,7 +180,7 @@ class stock:
         # self.res['boll_l'] = lower
         return upper, mid, lower
     
-    def Get_Rsi(self, window=14):
+    def Get_Rsi(self, window=RSI_WINDOW):
         """Compute RSI indicator with proper handling of initial values"""
         delta = self.data['收盘'].diff()
         gain = delta.copy()
@@ -194,6 +208,7 @@ if __name__ == "__main__":
     # parser.add_argument('--kp', type=int, default = 9)
     parser.add_argument('--ct', type=str, default = '')
     parser.add_argument('--st', type=bool, default = False)
+    parser.add_argument('--dw', type=bool, default = False)
     args = parser.parse_args()
     for i in p_list.split('\n')[2:-1]:
         if args.sn == 'all' or args.sn == i.split(' ')[0]:
@@ -203,11 +218,19 @@ if __name__ == "__main__":
             # print(self.p_SN, self.p_name)
             st.Get_Data()
             st.Get_SomeData(args.ct)
-            if args.st:
+            if (not args.sn == 'all') and args.st:
                 print(st.p_name)
                 sig = signal()
                 sig.generate_signals(st.res)
                 print(sig.res)
+                sig.backtest_strategy(sig.res)
+                print(sig.res)
+                sig.calculate_performance_metrics(sig.res)
+                print(sig.metrics)
+                if args.dw:
+                    sig.plot_price_and_macd(sig.res)
+                    sig.plot_returns_comparison(sig.res)
+                    sig.plot_returns_distribution(sig.res)
         if args.ck == 'all' or args.ck == i.split(' ')[0]:
             p_SN = i.split(' ')[0]
             p_name = i.split(' ')[1]
