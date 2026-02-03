@@ -3,6 +3,19 @@ import numpy as np
 from pathlib import Path
 from my_name import group1_list
 
+class jiaoyi:
+    def __init__(self, all_money = 10000):
+        self.all_money = all_money
+        self.pick = 0
+
+    def buy(self, price, num):
+        self.all_money -= price * num
+        self.pick += num
+
+    def sell(self, price, num):
+        self.all_money += price * num
+        self.pick -= num
+
 class mystrategy:
     def __init__(self, p_SN, p_name):
         self.p_SN = p_SN
@@ -94,7 +107,8 @@ class mystrategy:
     def find_buy_point(self):
         # if self.sn in group1_list:
         #     return self.way3()
-        return self.way3()
+        return self.find_min_point()
+        # return self.way4()
 
     def way1(self):
         count_res = 0
@@ -247,7 +261,7 @@ class mystrategy:
         if self.rd.empty:
             return 0
         for index, row in self.rd.iterrows():
-            if row['date'] < '2025':
+            if row['date'] < '2021':
                 continue
             money_all = money + pick * row['value']
             # if row['K'] < 20 and row['rsi'] < 30 and pick == 0 and row['value'] < row['boll_l']:
@@ -257,12 +271,12 @@ class mystrategy:
                 self.res.loc[count_res, 'K'] = row['K']
                 self.res.loc[count_res, 'rsi'] = row['rsi']
                 pick += 1 * money / row['value']
-                money = 0
+                money -= 1 * money
                 self.res.loc[count_res, 'money_all'] = money_all
                 self.res.loc[count_res, 'money'] = money
                 self.res.loc[count_res, 'pick'] = pick
                 self.res.loc[count_res, 'buy'] = 1
-                self.res.loc[count_res, 'min'] = row['value']
+                # self.res.loc[count_res, 'min'] = row['value']
                 count_res += 1
                 max_v = row['value']
             elif row['K'] > 80 and row['rsi'] > 80:
@@ -280,9 +294,9 @@ class mystrategy:
                 self.res.loc[count_res, 'sell'] = 1
                 self.res.loc[count_res, 'min'] = min_v
                 flag_sell = 0
-                if self.res.loc[count_res-1, 'money_all'] > self.res.loc[count_res, 'money_all']:
-                    print(self.p_SN, self.p_name)
-                    print(self.res[count_res-1:count_res+1]) 
+                # if self.res.loc[count_res-1, 'money_all'] > self.res.loc[count_res, 'money_all']:
+                #     print(self.p_SN, self.p_name)
+                #     print(self.res[count_res-1:count_res+1]) 
                 count_res += 1
             if pick > 0:
                 max_v = max(max_v, row['value'])
@@ -293,13 +307,86 @@ class mystrategy:
             #     self.res.loc[count_res, 'date'] = row['date']
             #     self.res.loc[count_res, 'value'] = row['value']
             #     count_res += 1
-        # if money_all > 50000:
-        #     print('\n',self.p_SN, self.p_name)
-        #     print(self.res) 
-        #     print("all money = ",money_all)
+        if money_all > 5000:
+            print('\n',self.p_SN, self.p_name)
+            print(self.res) 
+            print("all money = ",money_all)
         # self.res.to_csv("res.csv", index=False, encoding='utf-8-sig')
         return money_all
     
+    def way4(self):
+        if self.rd.empty:
+            return 0
+        jy = jiaoyi()
+        loop = []
+        min_v = 999999
+        for index, row in self.rd.iterrows():
+            if row['date'] < '2025':
+                continue
+            all_p = jy.all_money / row['value']
+            if row['K'] < 20 and row['rsi'] < 30 and row['value'] < row['boll_l'] and jy.all_money > 0:
+                jy.buy(row['value'], all_p)
+                loop.append([row['date'], row['value'], row['K'], row['rsi']])
+            if row['K'] > 80 and row['rsi'] > 80 and row['value'] > row['boll_m'] and jy.pick > 0:
+                jy.sell(row['value'], jy.pick)
+                loop.append([row['date'], row['value'], row['K'], row['rsi'], min_v])
+                min_v = 999999
+            if jy.pick > 0:
+                min_v = min(min_v, row['value'])
+        
+        # self.res.to_csv("res.csv", index=False, encoding='utf-8-sig')
+        money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value']
+        print(loop)
+        return money_all
+    
+    def find_min_point(self):
+        if self.rd.empty:
+            return 0
+        min_v = -1
+        day = 10
+        score = 0
+        score_all = 0
+        min_times = 0
+        jy_times = 0
+        buy_flag = 0
+        for index, row in self.rd.iterrows():
+            if row['date'] < '2023' or row['date'] > '2027':
+                continue
+            aa = []
+            if buy_flag > 0:
+                min_v = row['value']
+                min_times += 1
+                a_min = a_max = row['value']
+                jy_times += 1
+                buy_flag = 0
+            if row['K'] < 10 and row['rsi'] < 10:
+                buy_flag += 1
+            else:
+                buy_flag = max(0, buy_flag-1)
+            if min_v > 0 and index < len(self.rd)-day:
+                for i in range(1, day+1):
+                    aa.append(self.rd.iloc[index+i]['value'])
+                    if self.rd.iloc[index+i]['value'] > min_v:
+                        score += 1
+                    if self.rd.iloc[index+i]['value'] < a_min:
+                        a_min = self.rd.iloc[index+i]['value']
+                    if self.rd.iloc[index+i]['value'] > a_max:
+                        a_max = self.rd.iloc[index+i]['value']
+                if self.rd.iloc[index+day]['value'] > min_v * 1.1:
+                    score = day
+                # print(aa, score)
+                score_all += score
+                # if score == 0 and a_min < min_v * 0.9:
+                #     print(self.p_SN, aa)
+                score = 0
+                if min_v == a_min: a_min = a_min - 0.1
+                # print(a_max, min_v, a_min,(a_max - min_v) / (min_v - a_min))
+                min_v = -1
+        # print(score_all/min_times)
+        if min_times == 0:
+            return day/2, 0
+        return [score_all/min_times, jy_times]
+
 
     def sum_revenue(self):
         return

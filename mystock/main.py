@@ -116,6 +116,7 @@ class stock:
                 # boll_u, boll_m, boll_l = self.Get_BOLL()
                 # K, D, J = self.Get_KDJ()
                 # rsi = self.Get_Rsi()
+                print(self.res.index.size, len(self.data))
                 for i in range(self.res.index.size, len(self.data)):
                     self.res.loc[i,'date'] = self.data.date[i]
                     self.res.loc[i,'value'] = self.data.close[i]
@@ -378,17 +379,20 @@ if __name__ == "__main__":
                 st.Check_Data()
     if args.fd:
         sum,count,win_count = 0,0,0
+        tm_all = 0
         for i in p_list.split('\n')[2:-1]:
             if args.fd == 'all' or args.fd == i.split(' ')[0]:
                 p_SN = i.split(' ')[0]
                 p_name = i.split(' ')[1]
                 st = mystrategy(p_SN, p_name)
-                res = st.find_buy_point()
-                if res > 10000:
+                # res = st.find_buy_point()
+                res,tm = st.find_min_point()
+                if res > 5:
                     win_count += 1
                 count += 1
                 sum += res
-        print(f"\ntotal:{count}, avg:{sum/count}, win:{win_count/count*100:.2f}")
+                tm_all += tm
+        print(f"\ntotal:{count}, avg:{sum/count}, win:{win_count/count*100:.2f}, tm_all:{tm_all/count:.2f}")
     # st = stock(args.sn, args.ct, args.st)
     # st.Show_plt()
     # st.Get_MACD()
