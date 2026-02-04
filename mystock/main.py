@@ -3,7 +3,6 @@
 import pandas as pd
 import akshare as ak
 import tushare as ts
-import datetime as dt
 import matplotlib.pyplot as plt
 import sys, os
 import numpy as np
@@ -20,9 +19,11 @@ from strategy import signal
 from mystrategy import mystrategy
 import requests
 import time
+from datetime import datetime as dt, date
+from typing import List
 
 k_limit = 20
-rsi_limit = 30
+rsi_limit = 20
 
 KDJ_N = 9
 KDJ_M1 = 3
@@ -55,11 +56,38 @@ requests.get = session.get
 # print(dir(ak))
 # ak.set_config(headers=headers)
 
+ts.set_token('5c940b85806741e9a4aedd3495a9fd43c11a0542d4b3ad641c1ef949')
+pro = ts.pro_api()
+
+def get_all_stocks_today() -> List[str]:
+    try:
+        today_dt = dt.now()  # dt是datetime的别名
+        today_str = today_dt.strftime('%Y%m%d')
+        today_int = int(today_str)
+        df = pro.daily(trade_date=today_int)
+        if df is None or df.empty:
+            print(f"今天({today_str})没有交易数据")
+            return []
+        stock_sns = []
+        for ts_code in df['ts_code'].unique():
+            # 去除交易所后缀，只保留纯数字代码
+            if '.' in ts_code:
+                sn = ts_code.split('.')[0]
+            else:
+                sn = ts_code
+            stock_sns.append(sn)
+        print(f"获取到 {len(stock_sns)} 只股票的SN号")
+        return stock_sns
+        
+    except Exception as e:
+        print(f"获取当天股票数据失败: {e}")
+        return []
+
 def get_A_data_from_python(p_SN):
     data = pd.DataFrame(columns=['date', 'now', 'close', 'high', 'low', 'open', 'vol', 'vor', 'tor'])
     try:
         dt = ak.stock_zh_a_hist(symbol=p_SN)
-        data['date'] = dt['日期']
+        data['date'] = pd.to_datetime(dt['日期'])  # 立即转换为datetime
         data['now'] = dt['收盘']
         data['close'] = dt['收盘']
         data['high'] = dt['最高']
@@ -68,9 +96,11 @@ def get_A_data_from_python(p_SN):
         data['vol'] = dt['成交量']
         data['vor'] = dt['成交额']
         data['tor'] = dt['换手率']
+        
+        # 筛选2010年以后的数据
+        data = data[data['date'] >= '2010-01-01']
+        
     except Exception as e:
-        ts.set_token('5c940b85806741e9a4aedd3495a9fd43c11a0542d4b3ad641c1ef949')
-        pro = ts.pro_api() # 重要：必须执行这行来创建接口对象
         if p_SN.startswith('6'):
             dt = pro.daily(ts_code=p_SN+'.SH')
         elif p_SN.startswith('9'):
@@ -79,9 +109,9 @@ def get_A_data_from_python(p_SN):
             dt = pro.daily(ts_code=p_SN+'.SZ')
         dt = dt.sort_values(by='trade_date', ascending=True)
         dt = dt.reset_index(drop=True)
-        data['date'] = dt['trade_date'].astype(str).str[:4] + '-' + \
-               dt['trade_date'].astype(str).str[4:6] + '-' + \
-               dt['trade_date'].astype(str).str[6:8]
+        
+        # 直接创建datetime格式的日期
+        data['date'] = pd.to_datetime(dt['trade_date'].astype(str), format='%Y%m%d')
         data['now'] = dt['close']
         data['close'] = dt['close']
         data['high'] = dt['high']
@@ -90,9 +120,15 @@ def get_A_data_from_python(p_SN):
         data['vol'] = dt['vol']
         data['vor'] = dt['amount']
         data['tor'] = dt['pct_chg']
+        
+        # 筛选2010年以后的数据
+        data = data[data['date'] >= '2010-01-01']
+        
         time.sleep(1)
     except:
         print(f"获取{p_SN}数据失败")
+    if not data.empty and 'date' in data.columns:
+        data['date'] = pd.to_datetime(data['date']).dt.strftime('%Y-%m-%d')
     return data
 
 class stock:
@@ -108,8 +144,8 @@ class stock:
         file_name = f'/opt/zack/master/data/{self.p_SN}.csv'
         if Path(file_name).is_file():
             self.res = pd.read_csv(file_name, encoding="utf-8-sig")
-            if (self.res['date'][self.res.index.size-1] != str(dt.date.today())) and not flag:
-                print(self.res['date'][self.res.index.size-1] , str(dt.date.today()), file_name)
+            if (self.res['date'].iloc[-1] != str(date.today())) and not flag:
+                print(self.res['date'].iloc[-1] , str(date.today()), file_name)
                 self.data = get_A_data_from_python(self.p_SN)
                 update_size = self.res.index.size
                 # macd, diff = self.Get_MACD()
@@ -232,7 +268,7 @@ class stock:
     def Get_KDJ(self, N=KDJ_N, M1=KDJ_M1, M2=KDJ_M2):
         # 计算短期RSV（相对强弱值）：RSV = (C - Ln) / (Hn - Ln) * 100 其中，C是当前close价，Ln是n天内的最低价，Hn是n天内的最高价。
         data = self.data.copy()
-        today = dt.date.today()
+        today = dt.now()
         low_min = data['low'].rolling(N, min_periods=1).min()
         high_max = data['high'].rolling(N, min_periods=1).max()
         data['RSV'] = (data['close'] - low_min) / (high_max - low_min) * 100
@@ -283,25 +319,29 @@ class stock:
         return rsi
     
     def Get_OBV(self):
-        """
-        手动计算OBV指标
-        """
-        data = self.data.copy()
+        """计算OBV指标"""
+        if self.res is None or len(self.res) < 2:
+            return pd.Series([0] * len(self.res) if self.res is not None else [])
         
-        data.loc[0, 'obv'] = 0
-        # 计算每日变化
-        for i in range(1, len(data.index)):
-            if data.loc[i, 'close'] > data.loc[i-1, 'close']:
-                data.loc[i, 'obv'] = data.loc[i-1, 'obv'] + data.loc[i, 'vol']
-            elif data.loc[i, 'close'] < data.loc[i-1, 'close']:
-                data.loc[i, 'obv'] = data.loc[i-1, 'obv'] - data.loc[i, 'vol']
-            else:
-                data.loc[i,'obv'] = data.loc[i-1, 'obv']
+        data = self.res.copy()
+        obv = [0.0] * len(data)
         
-        # 设置初始值（可根据需要调整）
-        # data.loc[0, 'obv'] = data.loc[0, 'vol']  # 或 obv[0] = 0
+        for i in range(1, len(data)):
+            try:
+                current_close = data.iloc[i]['close']
+                prev_close = data.iloc[i-1]['close']
+                current_vol = data.iloc[i]['vol']
+                
+                if current_close > prev_close:
+                    obv[i] = obv[i-1] + current_vol
+                elif current_close < prev_close:
+                    obv[i] = obv[i-1] - current_vol
+                else:
+                    obv[i] = obv[i-1]
+            except:
+                obv[i] = obv[i-1]
         
-        return data['obv']
+        return pd.Series(obv)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -350,15 +390,24 @@ if __name__ == "__main__":
                 rd_res['boll_m'] = list(map(lambda x: f"{x:.2f}", rd_res['boll_m']))
                 print(rd_res)
     if args.sn or args.ck:
+        if args.sn == 'all':
+            p_list = get_all_stocks_today()
+            for i in p_list:
+                # print(i)
+                p_SN = i
+                st = stock(p_SN, '')
+                st.Get_Data(flag=args.flag)
+                st.Get_SomeData(args.ct)
+            sys.exit()
         for i in p_list.split('\n')[2:-1]:
-            if args.sn == 'all' or args.sn == i.split(' ')[0]:
+            if args.sn == 'group1' or args.sn == i.split(' ')[0]:
                 p_SN = i.split(' ')[0]
                 p_name = i.split(' ')[1]
                 st = stock(p_SN, p_name)
                 # print(self.p_SN, self.p_name)
                 st.Get_Data(flag=args.flag)
                 st.Get_SomeData(args.ct)
-                if (not args.sn == 'all') and args.st:
+                if args.st:
                     print(st.p_name)
                     sig = signal()
                     sig.generate_signals(st.res)
@@ -392,6 +441,7 @@ if __name__ == "__main__":
                 count += 1
                 sum += res
                 tm_all += tm
+        print(f"\ntotal:{count}, avg:{sum/count}, win:{win_count/count*100:.2f}")
         print(f"\ntotal:{count}, avg:{sum/count}, win:{win_count/count*100:.2f}, tm_all:{tm_all/count:.2f}")
     # st = stock(args.sn, args.ct, args.st)
     # st.Show_plt()

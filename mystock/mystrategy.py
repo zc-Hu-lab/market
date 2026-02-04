@@ -107,8 +107,8 @@ class mystrategy:
     def find_buy_point(self):
         # if self.sn in group1_list:
         #     return self.way3()
-        return self.find_min_point()
-        # return self.way4()
+        # return self.find_min_point()
+        return self.way4()
 
     def way1(self):
         count_res = 0
@@ -324,7 +324,7 @@ class mystrategy:
             if row['date'] < '2025':
                 continue
             all_p = jy.all_money / row['value']
-            if row['K'] < 20 and row['rsi'] < 30 and row['value'] < row['boll_l'] and jy.all_money > 0:
+            if row['K'] < 20 and row['rsi'] < 20 and row['value'] < row['boll_l'] and jy.all_money > 0:
                 jy.buy(row['value'], all_p)
                 loop.append([row['date'], row['value'], row['K'], row['rsi']])
             if row['K'] > 80 and row['rsi'] > 80 and row['value'] > row['boll_m'] and jy.pick > 0:
@@ -336,7 +336,7 @@ class mystrategy:
         
         # self.res.to_csv("res.csv", index=False, encoding='utf-8-sig')
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value']
-        print(loop)
+        # print(loop)
         return money_all
     
     def find_min_point(self):
@@ -346,23 +346,28 @@ class mystrategy:
         day = 10
         score = 0
         score_all = 0
-        min_times = 0
         jy_times = 0
-        buy_flag = 0
+        rsi_flag = 0
+        boll_flag = 0
         for index, row in self.rd.iterrows():
             if row['date'] < '2023' or row['date'] > '2027':
                 continue
             aa = []
-            if buy_flag > 0:
+            if boll_flag > 0 and rsi_flag > 0 and 1:
                 min_v = row['value']
-                min_times += 1
                 a_min = a_max = row['value']
                 jy_times += 1
-                buy_flag = 0
-            if row['K'] < 10 and row['rsi'] < 10:
-                buy_flag += 1
+                rsi_flag = 0
+                boll_flag = 0
             else:
-                buy_flag = max(0, buy_flag-1)
+                if row['K'] < 20 and row['rsi'] < 30:
+                    rsi_flag += 1
+                else:
+                    rsi_flag = max(0, rsi_flag-1)
+                if row['value'] < row['boll_l']:
+                    boll_flag += 1
+                else:
+                    boll_flag = max(0, boll_flag-1)
             if min_v > 0 and index < len(self.rd)-day:
                 for i in range(1, day+1):
                     aa.append(self.rd.iloc[index+i]['value'])
@@ -374,7 +379,7 @@ class mystrategy:
                         a_max = self.rd.iloc[index+i]['value']
                 if self.rd.iloc[index+day]['value'] > min_v * 1.1:
                     score = day
-                # print(aa, score)
+                # print(self.rd.iloc[index]['date'], aa, score)
                 score_all += score
                 # if score == 0 and a_min < min_v * 0.9:
                 #     print(self.p_SN, aa)
@@ -383,10 +388,28 @@ class mystrategy:
                 # print(a_max, min_v, a_min,(a_max - min_v) / (min_v - a_min))
                 min_v = -1
         # print(score_all/min_times)
-        if min_times == 0:
+        if jy_times == 0:
             return day/2, 0
-        return [score_all/min_times, jy_times]
+        return [score_all/jy_times, jy_times]
 
+    def find_max_point(self):
+        if self.rd.empty:
+            return 0
+        max_v = -1
+        day = 10
+        score = 0
+        score_all = 0
+        jy_times = 0
+        rsi_flag = 0
+        boll_flag = 0
+        for index, row in self.rd.iterrows():
+            if row['date'] < '2023' or row['date'] > '2027':
+                continue
+            aa = []
 
     def sum_revenue(self):
         return
+    
+# buy analysis 1:
+# 1. K < 20 and rsi < 20 and value < boll_l
+# 2023-2026 total:199, avg:6.830159914148974, win:77.89, tm_all:6.67    (10 days)
