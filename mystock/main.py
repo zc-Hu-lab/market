@@ -3,28 +3,21 @@
 import pandas as pd
 import akshare as ak
 import tushare as ts
-import matplotlib.pyplot as plt
 import sys, os
 import numpy as np
 from pathlib import Path
-from mplfinance.original_flavor import candlestick2_ohlc
-from matplotlib.ticker import FormatStrFormatter
 import argparse
 from p_name import p_list
 from my_name import buy_list
-from my_name import imp_list
-from my_name import way1_list
-from my_name import way2_list
-from strategy import signal
-from mystrategy import mystrategy
 import requests
 import time
-from datetime import datetime as dt, date
+from datetime import datetime as dt, date, timedelta
 from typing import List
+from my_name import black_list
 
-k_limit = 20
-rsi_limit = 20
-
+k_limit = 30
+rsi_limit = 30
+start_date = '2010-01-01'
 KDJ_N = 9
 KDJ_M1 = 3
 KDJ_M2 = 3
@@ -36,100 +29,168 @@ BOLL_K = 2
 RSI_WINDOW = 14
 
 headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2',
     'Accept-Encoding': 'gzip, deflate, br',
     'Connection': 'keep-alive',
     'Upgrade-Insecure-Requests': '1',
 }
-# 禁用 requests 的代理
+
 session = requests.Session()
-session.trust_env = False  # 忽略系统代理
-
+session.trust_env = False
 ak.session = session
-
-# 临时替换 requests 的默认行为
 original_get = requests.get
 requests.get = session.get
-# print(f"akshare版本: {ak.__version__}")
-# print(dir(ak))
-# ak.set_config(headers=headers)
 
-ts.set_token('5c940b85806741e9a4aedd3495a9fd43c11a0542d4b3ad641c1ef949')
+ts.set_token('f56d02fa39d85879dd2ce855faee78641ca923da5d6ebe978ad8affa')
 pro = ts.pro_api()
 
-def get_all_stocks_today() -> List[str]:
+# def get_all_stocks_today() -> List[str]:
+#     try:
+#         today_dt = dt.now()
+#         today_str = today_dt.strftime('%Y%m%d')
+#         today_int = int(today_str)
+#         df = pro.daily(trade_date=today_int)
+#         if df is None or df.empty:
+#             print(f"今天({today_str})没有交易数据")
+#             return []
+#         stock_sns = [code.split('.')[0] for code in df['ts_code'].unique()]
+#         print(f"获取到 {len(stock_sns)} 只股票的SN号")
+#         return stock_sns
+#     except Exception as e:
+#         print(f"获取当天股票数据失败: {e}")
+#         return []
+    
+def get_all_stocks_today(max_retry_days: int = 10) -> List[str]:
     try:
-        today_dt = dt.now()  # dt是datetime的别名
-        today_str = today_dt.strftime('%Y%m%d')
-        today_int = int(today_str)
-        df = pro.daily(trade_date=today_int)
-        if df is None or df.empty:
-            print(f"今天({today_str})没有交易数据")
-            return []
-        stock_sns = []
-        for ts_code in df['ts_code'].unique():
-            # 去除交易所后缀，只保留纯数字代码
-            if '.' in ts_code:
-                sn = ts_code.split('.')[0]
-            else:
-                sn = ts_code
-            stock_sns.append(sn)
-        print(f"获取到 {len(stock_sns)} 只股票的SN号")
-        return stock_sns
-        
-    except Exception as e:
-        print(f"获取当天股票数据失败: {e}")
+        current_date = dt.now()
+        attempts = 0
+        while attempts < max_retry_days:
+            check_date = current_date - timedelta(days=attempts)
+            trade_date_str = check_date.strftime('%Y%m%d')
+            trade_date_int = int(trade_date_str)
+            try:
+                df = pro.daily(trade_date=trade_date_int)
+                if df is not None and not df.empty:
+                    stock_sns = [code.split('.')[0] for code in df['ts_code'].unique()]
+                    date_str = check_date.strftime('%Y-%m-%d')
+                    if attempts == 0:
+                        print(f"获取到当天({date_str}) {len(stock_sns)} 只股票")
+                    else:
+                        print(f"\n当天无交易，找到最近交易日: {date_str}")
+                        print(f"获取到 {len(stock_sns)} 只股票")
+                        
+                        while True:
+                            user_input = input("是否使用最近交易日数据？(y/n): ").strip().lower()
+                            
+                            if user_input == 'y':
+                                return stock_sns
+                            elif user_input == 'n':
+                                print("用户选择退出，返回空列表")
+                                return []
+                            else:
+                                print("请输入 y 或 n")
+                    return stock_sns
+                else:
+                    attempts += 1
+            except Exception as api_error:
+                attempts += 1
+                continue
+        print(f"在最近 {max_retry_days} 天内未找到有效交易数据")
         return []
+    except Exception as e:
+        print(f"获取股票数据失败: {e}")
+        return []
+
+import threading
+
+# 使用线程锁
+_rate_lock = threading.Lock()
+_last_call_time = None
+_call_count = 0
+_CALL_LIMIT = 49
+_WINDOW = 61  # 60秒窗口
+
+def wait_for_rate_limit():
+    """等待直到可以调用API"""
+    global _last_call_time, _call_count
+    with _rate_lock:
+        current_time = dt.now()
+        if _last_call_time is None:
+            _last_call_time = current_time
+            _call_count = 1
+            return
+        elapsed = (current_time - _last_call_time).total_seconds()
+        if elapsed >= _WINDOW:
+            _last_call_time = current_time
+            _call_count = 1
+        else:
+            _call_count += 1
+            if _call_count > _CALL_LIMIT:
+                wait_time = _WINDOW - elapsed
+                if wait_time > 0:
+                    print(f"达到频率限制，等待 {wait_time:.1f} 秒...")
+                    time.sleep(wait_time)
+                _last_call_time = dt.now()
+                _call_count = 1
 
 def get_A_data_from_python(p_SN):
     data = pd.DataFrame(columns=['date', 'now', 'close', 'high', 'low', 'open', 'vol', 'vor', 'tor'])
+    # try:
+    #     wait_for_rate_limit()
+    #     dt_data = ak.stock_zh_a_hist(symbol=p_SN)
+    #     data['date'] = pd.to_datetime(dt_data['日期'])
+    #     data['now'] = dt_data['收盘']
+    #     data['close'] = dt_data['收盘']
+    #     data['high'] = dt_data['最高']
+    #     data['low'] = dt_data['最低']
+    #     data['open'] = dt_data['开盘']
+    #     data['vol'] = dt_data['成交量']
+    #     data['vor'] = dt_data['成交额']
+    #     data['tor'] = dt_data['换手率']
+    #     data = data[data['date'] >= start_date]
+    # except Exception as e:
+    wait_for_rate_limit()
     try:
-        dt = ak.stock_zh_a_hist(symbol=p_SN)
-        data['date'] = pd.to_datetime(dt['日期'])  # 立即转换为datetime
-        data['now'] = dt['收盘']
-        data['close'] = dt['收盘']
-        data['high'] = dt['最高']
-        data['low'] = dt['最低']
-        data['open'] = dt['开盘']
-        data['vol'] = dt['成交量']
-        data['vor'] = dt['成交额']
-        data['tor'] = dt['换手率']
-        
-        # 筛选2010年以后的数据
-        data = data[data['date'] >= '2010-01-01']
-        
-    except Exception as e:
-        if p_SN.startswith('6'):
-            dt = pro.daily(ts_code=p_SN+'.SH')
-        elif p_SN.startswith('9'):
-            dt = pro.daily(ts_code=p_SN+'.BJ')
-        else:
-            dt = pro.daily(ts_code=p_SN+'.SZ')
-        dt = dt.sort_values(by='trade_date', ascending=True)
-        dt = dt.reset_index(drop=True)
-        
-        # 直接创建datetime格式的日期
-        data['date'] = pd.to_datetime(dt['trade_date'].astype(str), format='%Y%m%d')
-        data['now'] = dt['close']
-        data['close'] = dt['close']
-        data['high'] = dt['high']
-        data['low'] = dt['low']
-        data['open'] = dt['open']
-        data['vol'] = dt['vol']
-        data['vor'] = dt['amount']
-        data['tor'] = dt['pct_chg']
-        
-        # 筛选2010年以后的数据
-        data = data[data['date'] >= '2010-01-01']
-        
-        time.sleep(1)
-    except:
-        print(f"获取{p_SN}数据失败")
+        ts_code = f"{p_SN}.SH" if p_SN.startswith('6') else f"{p_SN}.BJ" if p_SN.startswith('9') else f"{p_SN}.SZ"
+        dt_data = pro.daily(ts_code=ts_code)
+        dt_data = dt_data.sort_values(by='trade_date', ascending=True)
+        dt_data = dt_data.reset_index(drop=True)
+        data['date'] = pd.to_datetime(dt_data['trade_date'].astype(str), format='%Y%m%d')
+        data['now'] = dt_data['close']
+        data['close'] = dt_data['close']
+        data['high'] = dt_data['high']
+        data['low'] = dt_data['low']
+        data['open'] = dt_data['open']
+        data['vol'] = dt_data['vol']
+        data['vor'] = dt_data['amount']
+        data['tor'] = dt_data['pct_chg']
+        data = data[data['date'] >= start_date]
+        # time.sleep(0.5)
+    except Exception as e2:
+        print(f"tushare获取{p_SN}失败: {e2}")
+        return None
     if not data.empty and 'date' in data.columns:
         data['date'] = pd.to_datetime(data['date']).dt.strftime('%Y-%m-%d')
     return data
+
+
+def get_D_data_from_python(p_time):
+    data = pd.DataFrame(columns=['sn', 'date', 'now', 'close', 'high', 'low', 'open', 'vol', 'vor', 'tor'])
+    dt_data = pro.daily(trade_date=p_time)
+    dt_data = dt_data.sort_values(by='trade_date', ascending=True)
+    dt_data = dt_data.reset_index(drop=True)
+    data['sn'] = dt_data['ts_code'].apply(lambda x: x.split('.')[0])
+    data['date'] = pd.to_datetime(dt_data['trade_date'].astype(str), format='%Y%m%d')
+    data['now'] = dt_data['close']
+    data['close'] = dt_data['close']
+    data['high'] = dt_data['high']
+    data['low'] = dt_data['low']
+    data['open'] = dt_data['open']
+    data['vol'] = dt_data['vol']
+    data['vor'] = dt_data['amount']
+    data['tor'] = dt_data['pct_chg']
 
 class stock:
     def __init__(self, p_SN, p_name):
@@ -145,59 +206,65 @@ class stock:
         if Path(file_name).is_file():
             self.res = pd.read_csv(file_name, encoding="utf-8-sig")
             if (self.res['date'].iloc[-1] != str(date.today())) and not flag:
-                print(self.res['date'].iloc[-1] , str(date.today()), file_name)
+                # print(self.res['date'].iloc[-1] , str(date.today()), file_name)
                 self.data = get_A_data_from_python(self.p_SN)
+                if self.data is None or self.data.empty:
+                    return
                 update_size = self.res.index.size
-                # macd, diff = self.Get_MACD()
-                # boll_u, boll_m, boll_l = self.Get_BOLL()
-                # K, D, J = self.Get_KDJ()
-                # rsi = self.Get_Rsi()
-                print(self.res.index.size, len(self.data))
-                for i in range(self.res.index.size, len(self.data)):
-                    self.res.loc[i,'date'] = self.data.date[i]
-                    self.res.loc[i,'value'] = self.data.close[i]
-                    # self.res.loc[i,'5--day'] = self.data.close[i-5:].rolling(5).mean()[i]
-                    self.res.loc[i,'10-day'] = self.data.close[i-10:].rolling(10).mean()[i]
-                    self.res.loc[i,'vol'] = self.data.vol[i]
-                    self.res.loc[i,'vor'] = self.data.vor[i]
-                    self.res.loc[i,'tor'] = self.data.tor[i]
-                    # self.res.loc[i,'macd'] = macd[i]
-                    # self.res.loc[i,'diff'] = diff[i]
-                    # self.res.loc[i,'boll_u'] = boll_u[i]
-                    # self.res.loc[i,'boll_m'] = boll_m[i]
-                    # self.res.loc[i,'boll_l'] = boll_l[i]
-                    # self.res.loc[i,'K'] = K[i]
-                    # self.res.loc[i,'D'] = D[i]
-                    # self.res.loc[i,'J'] = J[i]
-                    # self.res.loc[i,'rsi'] = rsi[i]
+                # print(update_size, len(self.data))
+                for i in range(update_size, len(self.data)):
+                    self.res.loc[i,'date'] = self.data.date.iloc[i]
+                    self.res.loc[i,'value'] = self.data.close.iloc[i]
+                    self.res.loc[i,'10-day'] = self.data.close.iloc[i-9:i+1].mean()
+                    self.res.loc[i,'vol'] = self.data.vol.iloc[i]
+                    self.res.loc[i,'vor'] = self.data.vor.iloc[i]
+                    self.res.loc[i,'tor'] = self.data.tor.iloc[i]
+                self.res['K'], self.res['D'], self.res['J'] = self.Get_KDJ()
                 self.res['macd'], self.res['diff'], self.res['dea'] = self.Get_MACD()
                 self.res['boll_u'], self.res['boll_m'], self.res['boll_l'] = self.Get_BOLL()
-                self.res['K'], self.res['D'], self.res['J'] = self.Get_KDJ()
                 self.res['rsi'] = self.Get_Rsi()
                 self.res['obv'] = self.Get_OBV()
+                self.calculate_cross_indicators()
                 self.res.to_csv(file_name, index=False, encoding='utf-8-sig')
                 if update_size != len(self.data):
-                    print(self.p_SN, self.p_name ,' update csv')
+                    print(self.res['date'].iloc[-1], self.p_SN, self.p_name ,' update csv ', len(self.data) - update_size)
         else:
             self.data = get_A_data_from_python(self.p_SN)
+            if self.data is None or self.data.empty:
+                return
             self.res = pd.DataFrame()
             self.res['date'] = self.data['date']
             self.res['value'] = self.data['close']
-            # self.res['5--day'] = self.data.close.rolling(5).mean()
             self.res['10-day'] = self.data.close.rolling(10).mean()
             self.res['vol'] = self.data.vol
             self.res['vor'] = self.data.vor
             self.res['tor'] = self.data.tor
+            self.res['K'], self.res['D'], self.res['J'] = self.Get_KDJ()
             self.res['macd'], self.res['diff'], self.res['dea'] = self.Get_MACD()
             self.res['boll_u'], self.res['boll_m'], self.res['boll_l'] = self.Get_BOLL()
-            self.res['K'], self.res['D'], self.res['J'] = self.Get_KDJ()
             self.res['rsi'] = self.Get_Rsi()
             self.res['obv'] = self.Get_OBV()
+            self.calculate_cross_indicators()
             self.res.to_csv(file_name, index=False, encoding='utf-8-sig')
+    
+    def update_all(self):
+        s1 = 1
+
+    def find_point(self, start_date, end_date = None):
+        if end_date is None:
+            end_date = date.today()
+        self.Get_Data(True)
+        mask = (self.res['date'] >= start_date)# & (self.res['date'] <= end_date)
+        filtered_data = self.res.loc[mask]
+        
+        self.max_v = filtered_data['value'].max()
+        self.min_v = filtered_data['value'].min()
+        try:
+            self.buy_v = filtered_data['value'].iloc[0]
+        except:
+            self.buy_v = filtered_data['value'].min()
 
     def Read_import(self):
-        # data = get_A_data_from_python(self.p_SN)
-        # n_val = data.loc[data.index == data.index.size-1].copy()
         data = ts.get_realtime_quotes(self.p_SN)
         n_val = pd.DataFrame(columns=['last', 'high', 'open', 'close'])
         n_val['last'] = data['pre_close']
@@ -209,75 +276,24 @@ class stock:
                 n_val[col] = pd.to_numeric(n_val[col], errors='coerce')
         return n_val
 
-    def Check_Data(self):
-        file_name = f'/opt/zack/master/data/{self.p_SN}.csv'
-        if Path(file_name).is_file():
-            self.data = get_A_data_from_python(self.p_SN)
-            # with pd.read_csv(file_name, encoding="utf-8-sig") as res:
-            res = pd.read_csv(file_name, encoding="utf-8-sig")
-            if not (set(self.data['close']) == set(res.value)):
-                user_input = input("if rm the csv : y / n: ")
-                if user_input.lower() == 'y':
-                    os.system('rm %s'%file_name)
-
     def Get_SomeData(self, p_CT):
+        if len(self.res) < 30:
+            return
         if p_CT == 'kdj':
-            n_val = self.res.loc[self.res.index == self.res.index.size-1]
-            if n_val.K.values < k_limit and n_val.rsi.values < rsi_limit:
-                print(self.p_SN, self.p_name)
-                print(n_val)
+            n_val = self.res.iloc[-1]
+            if n_val.value > n_val.boll_m:
+                if n_val.K < k_limit or n_val.rsi < rsi_limit:
+                    print(f"{self.p_SN:6}\t{self.p_name:6}\tdata:{n_val.date:12}\tvalue:{n_val.value:.2f}\tBOLL_m:{n_val.boll_m:.2f}\tMACD:{n_val.macd:.2f}"
+                        + f"\tK:{n_val.K:6.2f}\tRSI:{n_val.rsi:6.2f}\tCross:{n_val.MA_Cross:2}, {n_val.MACD_Cross:2}, {n_val.KDJ_Cross:2}")
 
-        # if p_CT == 'rsi':
-        #     n_val = self.res.loc[self.res.index == self.res.index.size-1]
-        #     if n_val.rsi.values < rsi_limit:
-        #         print(self.p_SN, self.p_name)
-        #         print(n_val)
-
-    def Show_plt(self):
-        fig, ax = plt.subplots(1, 1, figsize=(8,3), dpi=200)
-        candlestick2_ohlc(ax,
-                        opens = self.df3[ 'open'].values,
-                        highs = self.df3['high'].values,
-                        lows = self.df3[ 'low'].values,
-                        closes = self.df3['close'].values,
-                        width=0.5, colorup="r",colordown="g")
-
-        # 显示最高点和最低点
-        ax.text(self.df3.high.idxmax(), self.df3.high.max(),   s = self.df3.high.max(), fontsize=8)
-        ax.text(self.df3.high.idxmin(), self.df3.high.min() - 2, s = self.df3.high.min(), fontsize=8)
-
-        ax.set_facecolor("white")
-        plt.rc("font",family="")
-        ax.set_title(self.p_SN + ' ' + self.p_name, fontproperties="SimHei")
-
-        # 画均线
-        plt.plot(self.df3['5'].values, alpha = 0.5, label='MA5')
-        plt.plot(self.df3['10'].values, alpha = 0.5, label='MA10')
-
-        ax.legend(facecolor='white', edgecolor='white', fontsize=6)
-
-        # 修改x轴坐标
-        plt.xticks(ticks = np.arange(0,len(self.df3)), labels = self.df3.date.to_numpy() )
-        plt.xticks(rotation=90, size=7)
-
-        # 修改y轴坐标
-        ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-
-        plt.show()
-    
     def Get_KDJ(self, N=KDJ_N, M1=KDJ_M1, M2=KDJ_M2):
-        # 计算短期RSV（相对强弱值）：RSV = (C - Ln) / (Hn - Ln) * 100 其中，C是当前close价，Ln是n天内的最低价，Hn是n天内的最高价。
         data = self.data.copy()
-        today = dt.now()
         low_min = data['low'].rolling(N, min_periods=1).min()
         high_max = data['high'].rolling(N, min_periods=1).max()
         data['RSV'] = (data['close'] - low_min) / (high_max - low_min) * 100
         data['K'] = data['RSV'].ewm(alpha=1/M1, adjust=False).mean()
         data['D'] = data['K'].ewm(alpha=1/M2, adjust=False).mean()
         data['J'] = 3 * data['K'] - 2 * data['D']
-        # self.res['K'] = data['K']
-        # self.res['D'] = data['D']
-        # self.res['J'] = data['J']
         return data['K'],data['D'],data['J']
 
     def Get_MACD(self, n_fast=MACD_FAST, n_slow=MACD_SLOW, n_signal=MACD_SIGNAL):
@@ -286,52 +302,37 @@ class stock:
         diff = ema12 - ema26
         dea = diff.ewm(span=n_signal, adjust=False).mean()
         macd = 2 * (diff - dea)
-        # self.res['macd'] = macd
-        # self.res['diff'] = diff
         return macd, diff, dea
 
     def Get_BOLL(self, n = BOLL_N, k = BOLL_K):
         mid = self.data['close'].rolling(n).mean()
         upper = mid + k * self.data['close'].rolling(n).std()
         lower = mid - k * self.data['close'].rolling(n).std()
-        # self.res['boll_u'] = upper
-        # self.res['boll_m'] = mid
-        # self.res['boll_l'] = lower
         return upper, mid, lower
     
     def Get_Rsi(self, window=RSI_WINDOW):
-        """Compute RSI indicator with proper handling of initial values"""
         delta = self.data['close'].diff()
         gain = delta.copy()
         loss = delta.copy()
-
         gain[gain < 0] = 0
         loss[loss > 0] = 0
         loss = abs(loss)
-
-        # First value is sum of gains or losses
         avg_gain = gain.rolling(window=window, min_periods=1).mean()
         avg_loss = loss.rolling(window=window, min_periods=1).mean()
-
-        rs = avg_gain / (avg_loss + 1e-6)  # Avoid division by zero
+        rs = avg_gain / (avg_loss + 1e-6)
         rsi = 100 - (100 / (1 + rs))
-
         return rsi
     
     def Get_OBV(self):
-        """计算OBV指标"""
         if self.res is None or len(self.res) < 2:
             return pd.Series([0] * len(self.res) if self.res is not None else [])
-        
         data = self.res.copy()
         obv = [0.0] * len(data)
-        
         for i in range(1, len(data)):
             try:
                 current_close = data.iloc[i]['close']
                 prev_close = data.iloc[i-1]['close']
                 current_vol = data.iloc[i]['vol']
-                
                 if current_close > prev_close:
                     obv[i] = obv[i-1] + current_vol
                 elif current_close < prev_close:
@@ -340,111 +341,153 @@ class stock:
                     obv[i] = obv[i-1]
             except:
                 obv[i] = obv[i-1]
-        
         return pd.Series(obv)
+    
+    def calculate_cross_indicators(self):
+        """向量化计算交叉指标"""
+        if self.res is None or len(self.res) < 20:
+            return
+        
+        data = self.res.copy()
+        
+        # 1. MA交叉 (价格上穿/下穿10日均线)
+        data['MA_Cross'] = 0
+        ma_cross_up = (data['value'] > data['10-day']) & (data['value'].shift(1) <= data['10-day'].shift(1))
+        ma_cross_down = (data['value'] < data['10-day']) & (data['value'].shift(1) >= data['10-day'].shift(1))
+        data.loc[ma_cross_up, 'MA_Cross'] = 1
+        data.loc[ma_cross_down, 'MA_Cross'] = -1
+        
+        # 2. MACD交叉
+        data['MACD_Cross'] = 0
+        macd_cross_up = (data['diff'] > data['dea']) & (data['diff'].shift(1) <= data['dea'].shift(1))
+        macd_cross_down = (data['diff'] < data['dea']) & (data['diff'].shift(1) >= data['dea'].shift(1))
+        data.loc[macd_cross_up, 'MACD_Cross'] = 1
+        data.loc[macd_cross_down, 'MACD_Cross'] = -1
+        
+        # 3. KDJ交叉
+        data['KDJ_Cross'] = 0
+        kdj_cross_up = (data['K'] > data['D']) & (data['K'].shift(1) <= data['D'].shift(1))
+        kdj_cross_down = (data['K'] < data['D']) & (data['K'].shift(1) >= data['D'].shift(1))
+        data.loc[kdj_cross_up, 'KDJ_Cross'] = 1
+        data.loc[kdj_cross_down, 'KDJ_Cross'] = -1
+        
+        # 更新到self.res
+        self.res['MA_Cross'] = data['MA_Cross']
+        self.res['MACD_Cross'] = data['MACD_Cross']
+        self.res['KDJ_Cross'] = data['KDJ_Cross']
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--sn', type=str, default = '')
     parser.add_argument('--ck', type=str, default = '')
-    # parser.add_argument('--cnt', type=int, default = 90)
-    # parser.add_argument('--dd', type=int, default = 15)
-    # parser.add_argument('--kp', type=int, default = 9)
     parser.add_argument('--ct', type=str, default = 'kdj')
-    #kdj
     parser.add_argument('--st', type=bool, default = False)
     parser.add_argument('--dw', type=bool, default = False)
     parser.add_argument('--rd', action="store_const", const=True, default = False)
     parser.add_argument('--fd', type=str, default = '')
     parser.add_argument("--flag", action="store_const", const=True, default = False)
     args = parser.parse_args()
+    
     if args.rd:
-        if args.rd:
-            # with open('/Users/zack-pc/zack/market/market/mystock/import', 'r', encoding='utf-8') as file:
-                # fp = file.read()
-                rd_res = pd.DataFrame(columns=['sn', 'name', 'last', 'high', 'open', 'now', 'boll_m', 'K', 'rsi', 'xx', 'err'])
-                count = 0
-                # for i in fp.split('\n'):
-                for i in buy_list.split('\n')[1:-1]:
-                    sn = i.split(' ')[0]
-                    name = i.split(' ')[1]
-                    st = stock(sn, name)
-                    file_name = f'/opt/zack/master/data/{sn}.csv'
-                    file_data = pd.read_csv(file_name, encoding="utf-8-sig")
-                    res = st.Read_import()
-                    rd_res.loc[count, 'sn'] = sn
-                    rd_res.loc[count, 'name'] = name
-                    rd_res.loc[count, 'last'] = d_last = res['last'].values
-                    rd_res.loc[count, 'high'] = res['high'].values
-                    rd_res.loc[count, 'open'] =  res['open'].values
-                    rd_res.loc[count, 'now'] = d_now = res['close'].values
-                    rd_res.loc[count, 'xx'] = (d_now - d_last) / d_last
-                    rd_res.loc[count, 'boll_m'] = boll_m = file_data.iloc[-1]['boll_m']
-                    rd_res.loc[count, 'K'] = K = file_data.iloc[-1]['K']
-                    rd_res.loc[count, 'rsi'] = rsi = file_data.iloc[-1]['rsi']
-                    rd_res.loc[count, 'err'] = d_now < boll_m and K > 50
-                    count += 1
-                rd_res['xx'] = list(map(lambda x: f"{x:.2%}", rd_res['xx']))
-                rd_res['K'] = list(map(lambda x: f"{x:.2f}", rd_res['K']))
-                rd_res['rsi'] = list(map(lambda x: f"{x:.2f}", rd_res['rsi']))
-                rd_res['boll_m'] = list(map(lambda x: f"{x:.2f}", rd_res['boll_m']))
-                print(rd_res)
-    if args.sn or args.ck:
-        if args.sn == 'all':
-            p_list = get_all_stocks_today()
-            for i in p_list:
-                # print(i)
+        rd_res = pd.DataFrame(columns=['sn', 'name', 'last', 'high', 'open', 'now', 'boll_m', 'K', 'rsi', 'xx', 'err'])
+        count = 0
+        for i in buy_list.split('\n')[1:-1]:
+            sn = i.split(' ')[0]
+            name = i.split(' ')[1]
+            date_str = i.split(' ')[2].strip("'")
+            # start_date = dt.datetime.strptime(date_str, '%Y-%m-%d').date()
+            st = stock(sn, name)
+            file_name = f'/opt/zack/master/data/{sn}.csv'
+            file_data = pd.read_csv(file_name, encoding="utf-8-sig")
+            res = st.Read_import()
+            rd_res.loc[count, 'sn'] = sn
+            rd_res.loc[count, 'name'] = name
+            rd_res.loc[count, 'last'] = d_last = res['last'].values
+            rd_res.loc[count, 'high'] = res['high'].values
+            rd_res.loc[count, 'open'] =  res['open'].values
+            rd_res.loc[count, 'now'] = d_now = res['close'].values
+            rd_res.loc[count, 'xx'] = (d_now - d_last) / d_last
+            rd_res.loc[count, 'boll_m'] = boll_m = file_data.iloc[-1]['boll_m']
+            rd_res.loc[count, 'K'] = K = file_data.iloc[-1]['K']
+            rd_res.loc[count, 'rsi'] = rsi = file_data.iloc[-1]['rsi']
+            st.find_point(date_str)
+            rd_res.loc[count, 'err'] = False
+            if d_now < boll_m and d_now < st.max_v * 0.9: rd_res.loc[count, 'err'] = True
+            if d_now < st.buy_v * 0.9: rd_res.loc[count, 'err'] = True
+            if d_now < d_last * 0.92: rd_res.loc[count, 'err'] = True
+            count += 1
+        rd_res['xx'] = list(map(lambda x: f"{x:.2%}", rd_res['xx']))
+        rd_res['K'] = list(map(lambda x: f"{x:.2f}", rd_res['K']))
+        rd_res['rsi'] = list(map(lambda x: f"{x:.2f}", rd_res['rsi']))
+        rd_res['boll_m'] = list(map(lambda x: f"{x:.2f}", rd_res['boll_m']))
+        print(rd_res)
+    
+    if args.ck:
+        folder_path = "/opt/zack/master/data"
+        if os.path.exists(folder_path):
+            all_names = os.listdir(folder_path)
+            for file_ in all_names:
+                if args.ck == 'all' or f"{args.ck}.csv" == file_:
+                    print(file_)
+                    ck_handle = pd.read_csv(f"{folder_path}/{file_}", encoding="utf-8-sig")
+                    if ck_handle['date'].iloc[1] < start_date:
+                        os.system(f"rm {folder_path}/{file_}")
+                        print(f"rm {file_}")
+    
+    if args.sn:
+        p_list = get_all_stocks_today()
+        count = 0
+        count_all = len(p_list)
+        printed_percents = set()
+        for i in p_list:
+            if i in black_list:
+                continue
+            p_SN = None
+            if args.sn == 'allall':
                 p_SN = i
+                # 显示进度
+                percent = int((count / count_all) * 100)
+                if percent in [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] and percent not in printed_percents:
+                    print(f"\n🎯 {percent}% 完成\n")
+                    printed_percents.add(percent)
+                count += 1
+            elif args.sn == 'all' and i in p_list.split('\n')[2:-1]:
+                p_SN = i
+                # p_name = i.split(' ')[1]
+            elif args.sn == i:
+                p_SN = i
+            if p_SN is not None:
                 st = stock(p_SN, '')
                 st.Get_Data(flag=args.flag)
                 st.Get_SomeData(args.ct)
-            sys.exit()
-        for i in p_list.split('\n')[2:-1]:
-            if args.sn == 'group1' or args.sn == i.split(' ')[0]:
-                p_SN = i.split(' ')[0]
-                p_name = i.split(' ')[1]
-                st = stock(p_SN, p_name)
-                # print(self.p_SN, self.p_name)
-                st.Get_Data(flag=args.flag)
-                st.Get_SomeData(args.ct)
-                if args.st:
-                    print(st.p_name)
-                    sig = signal()
-                    sig.generate_signals(st.res)
-                    print(sig.res)
-                    sig.backtest_strategy(sig.res)
-                    print(sig.res)
-                    sig.calculate_performance_metrics(sig.res)
-                    print(sig.metrics)
-                    if args.dw:
-                        sig.plot_price_and_macd(sig.res)
-                        sig.plot_returns_comparison(sig.res)
-                        sig.plot_returns_distribution(sig.res)
-            if args.ck == 'all' or args.ck == i.split(' ')[0]:
-                p_SN = i.split(' ')[0]
-                p_name = i.split(' ')[1]
-                st = stock(p_SN, p_name)
-                # print(self.p_SN, self.p_name)
-                st.Check_Data()
+    
     if args.fd:
-        sum,count,win_count = 0,0,0
-        tm_all = 0
-        for i in p_list.split('\n')[2:-1]:
-            if args.fd == 'all' or args.fd == i.split(' ')[0]:
-                p_SN = i.split(' ')[0]
-                p_name = i.split(' ')[1]
-                st = mystrategy(p_SN, p_name)
-                # res = st.find_buy_point()
-                res,tm = st.find_min_point()
-                if res > 5:
-                    win_count += 1
-                count += 1
-                sum += res
-                tm_all += tm
-        print(f"\ntotal:{count}, avg:{sum/count}, win:{win_count/count*100:.2f}")
-        print(f"\ntotal:{count}, avg:{sum/count}, win:{win_count/count*100:.2f}, tm_all:{tm_all/count:.2f}")
-    # st = stock(args.sn, args.ct, args.st)
-    # st.Show_plt()
-    # st.Get_MACD()
-    # st.Get_BOLL()
-    # st.Get_KDJ(args.kp, args.dd)
+        from mystrategy import mystrategy
+        sum,count,win_count, win_all = 0,0,0,0
+        sum2,count2,win_count2 = 0,0,0
+        tm_all,tm_all2 = 0,0
+        folder_path = "/opt/zack/master/data"
+        if os.path.exists(folder_path):
+            all_names = os.listdir(folder_path)
+            for file_ in all_names:
+                if args.fd == 'allall' or f"{args.fd}.csv" == file_:
+                    i = file_.split('.csv')[0]
+                    p_SN = i
+                    st = mystrategy(p_SN)
+                    res, win_count, tm = st.find_buy_point()
+                    count += 1
+                    win_all += win_count
+                    sum += res
+                    tm_all += tm
+            if args.fd == 'all':
+                for i in p_list.split('\n')[2:-1]:
+                    p_SN = i.split(' ')[0]
+                    p_name = i.split(' ')[1]
+                    st = mystrategy(p_SN, p_name)
+                    res, win_count, tm = st.find_buy_point()
+                    count += 1
+                    win_all += win_count
+                    sum += res
+                    tm_all += tm
+            print(f"\ntotal:{count}, avg:{sum/count}, win:{win_all/tm_all*100:.2f}, tm_all:{tm_all/count:.2f}")
+            sys.exit()
