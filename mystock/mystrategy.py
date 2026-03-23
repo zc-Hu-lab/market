@@ -4,6 +4,8 @@ from pathlib import Path
 from my_name import group1_list
 from my_name import buy_list
 from my_name import week_macd_list
+from my_name import week_macd_list2
+from my_name import day_diff_dea_list
 
 def second_order_diff_pandas(series):
     # pandas的diff()方法
@@ -215,14 +217,15 @@ class mystrategy:
         # return self.find_min_point()
         # self.find_still_point()
         # return 1,1,1
-        if self.p_SN == '002241': return self.way16()
         # if self.p_SN == '002466': return self.way_603099()
         # if self.p_SN == '002475': return self.way_603099()
-        # if self.p_SN == '600660': return self.way_603039()
-        if self.p_SN == '601898': return self.way16()
-        if self.p_SN == '603039': return self.way16()
+        # if self.p_SN == '600660': return self.way_week_macd()
+        # if self.p_SN == '601898': return self.way16()
+        if self.p_SN == '603039': return self.way_603039()
         if self.p_SN in week_macd_list: return self.way_week_macd()
-        return self.way16()
+        if self.p_SN in week_macd_list2: return self.way_week_macd2()
+        if self.p_SN in day_diff_dea_list: return self.way_diff_dea()
+        return self.way14()
         # return self.fenxi()
 
     # macd > 0 and week_macd up
@@ -230,21 +233,19 @@ class mystrategy:
         if self.rd.empty:
             return 0
         jy = jiaoyi()
-        loop = []
         status = 0
         jy_times = 0
         win_times = 0
         max_v, min_v, buy_v = 0, 0, 0
         still_day = 0
         still_days = []
-        k_low = 30
         macd_low = []
         buy_flag = 0
         jie = 0
         huice = 0.0
         finall = ''
         for index, row in self.rd.iterrows():
-            if row['date'] < '2021' or row['date'] > '2027':
+            if row['date'] < '2024' or row['date'] > '2027':
                 continue
             if index < 40:
                 continue
@@ -254,10 +255,16 @@ class mystrategy:
                 return 10000, 0, 0
             if status == 0:
                 if jy.all_money > 0:
+                    if row['macd'] > 0 and row['macd'] > self.rd.iloc[index-1]['macd'] and \
+                        row['value'] > row['boll_m'] and self.rd.iloc[index-2]['value'] < self.rd.iloc[index-2]['boll_m']:
+                        status = 1
+                    # if row['macd'] > self.rd.iloc[index-1]['macd'] > self.rd.iloc[index-2]['macd'] and \
+                    #     len(macd_low) > 5 and min(macd_low) < -1:
+                    #     status = 1
                     # if 10 < row['K'] < 30 and row['K'] > self.rd.iloc[index-1]['K'] and self.rd.iloc[index-1]['K'] < self.rd.iloc[index-2]['K'] < self.rd.iloc[index-3]['K']:
                     #     status = 1
-                    if row['macd'] > self.rd.iloc[index-1]['macd'] > 0 > self.rd.iloc[index-2]['macd']:
-                        status = 1
+                    # if row['macd'] > self.rd.iloc[index-1]['macd'] > 0 > self.rd.iloc[index-2]['macd']:
+                    #     status = 1
                     # if 20 < k_low < 30 and row['K'] > 30 > self.rd.iloc[index-1]['K']:
                     #     status = 1
                     # if row['macd'] > self.rd.iloc[index-1]['macd'] > 0 and row['boll_m'] > self.rd.iloc[index-1]['boll_m']:
@@ -272,19 +279,15 @@ class mystrategy:
                         status = -2
                     if row['value'] < self.rd.iloc[index-1]['value'] * 0.92:
                         status = -2
-                    if row['macd'] < self.rd.iloc[index-1]['macd'] < self.rd.iloc[index-2]['macd'] and self.rd.iloc[index-2]['macd'] > 1:
-                        status = -2
-                    # if week_now['macd_weekly'] < self.rd_week.iloc[week_index-1]['macd_weekly']:
-                    #     status = -2
-                    # if row['macd'] < 0:
-                    #     status = -2
-                    # if still_day < 3 and row['macd'] < self.rd.iloc[index-1]['macd']:
-                    #     status = -2
-                    # if 70 < row['K'] < self.rd.iloc[index-1]['K'] and self.rd.iloc[index-1]['K'] > self.rd.iloc[index-2]['K'] > 70:
+                    # if row['macd'] < self.rd.iloc[index-1]['macd'] < self.rd.iloc[index-2]['macd'] and row['macd'] < 0:
                     #     status = -2
             
             if status == 1:
                 status = 1
+                if row['boll_m'] > self.rd.iloc[index-1]['boll_m']:
+                    status = 2
+                # if week_now['macd_weekly'] < self.rd_week.iloc[week_index-1]['macd_weekly']:
+                #     status = 0
                 if week_now['macd_weekly'] > self.rd_week.iloc[week_index-1]['macd_weekly']:
                     status = 2
                 # if row['boll_m'] > self.rd.iloc[index-1]['boll_m']:
@@ -334,13 +337,10 @@ class mystrategy:
             if buy_flag > 0:
                 all_p = jy.all_money / row['value']
                 jy.buy(row['value'], all_p)
-                loop.append([row['date'], row['value']])
-                # loop.append([v_trend, k_trend, macd_trend])
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
                 still_day = 0
-                # print(row['date'], row['value'], len(macd_low))
-                # print(row['date'], row['value'], self.rd_week.iloc[week_index]['macd_weekly'])
+                print(row['date'], row['value'], len(macd_low))
                 finall = row['date']
                 if index > len(self.rd)-2:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
@@ -350,10 +350,9 @@ class mystrategy:
                 if row['value'] > buy_v:
                     win_times += 1
                 jy.sell(row['value'], jy.pick)
-                loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
                 buy_flag = 0
                 still_days.append(still_day)
-                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
                 finall = ''
                 if index > len(self.rd)-2 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
@@ -364,9 +363,9 @@ class mystrategy:
             else:
                 macd_low = []
         
+        money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
         if not finall == '':
             print(self.p_SN, self.p_name, 'buy', finall , win_times, ' / ', jy_times, money_all)
-        money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
         return money_all,win_times,jy_times
     
     # week_macd up and macd > 0
@@ -462,7 +461,7 @@ class mystrategy:
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
                 still_day = 0
-                # print(row['date'], row['value'], week_now['macd_weekly'], self.rd_week.iloc[week_index-1]['macd_weekly'])
+                print(row['date'], row['value'], week_now['macd_weekly'], self.rd_week.iloc[week_index-1]['macd_weekly'])
                 money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
                 finall = row['date']
                 if index > len(self.rd)-2 and money_all > 10000:
@@ -474,19 +473,21 @@ class mystrategy:
                 loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
                 buy_flag = 0
                 still_days.append(still_day)
-                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
                 finall = ''
                 if index > len(self.rd)-3 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
                     print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
         
-        if not finall == '':
-            print(self.p_SN, self.p_name, 'buy', finall , win_times, ' / ', jy_times, money_all)
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+        # if not finall == '':
+        #     print(self.p_SN, self.p_name, 'buy', finall , win_times, ' / ', jy_times, money_all)
+        if money_all > 30000:
+            print(self.p_SN, self.p_name, win_times, ' / ', jy_times, money_all)
         return money_all,win_times,jy_times
     
-    # K < 30 and then K > 30 and K up 
-    def way_002241(self):
+    # week_macd up and week_macd > 0
+    def way_week_macd2(self):
         if self.rd.empty:
             return 0
         jy = jiaoyi()
@@ -498,14 +499,11 @@ class mystrategy:
         still_day = 0
         still_days = []
         buy_flag = 0
-        K_max = 0
         jie = 0
         huice = 0.0
-        macd_now = []
-        macd_last = []
         finall = ''
         for index, row in self.rd.iterrows():
-            if row['date'] < '2021' or row['date'] > '2027':
+            if row['date'] < '2024' or row['date'] > '2027':
                 continue
             if index < 40:
                 continue
@@ -515,57 +513,33 @@ class mystrategy:
             if week_now is None:
                 print(self.p_SN, 'no weekly data')
                 return 10000, 0, 0
-            if macd_now == []:
-                macd_now.append(row['macd'])
-            else:
-                if row['macd'] * macd_now[-1] < 0:
-                    macd_last = macd_now
-                    macd_now = [row['macd']]
-                else:
-                    macd_now.append(row['macd'])
             if status == 0:
                 if jy.all_money > 0:
-                    # if row['macd'] > 0 > self.rd.iloc[index-1]['macd']:
-                    #     status = 1
-                    # if week_now['macd_weekly'] > self.rd_week.iloc[week_index-1]['macd_weekly']:
-                    #     status = 1
-                    if row['K'] < 30:
+                    if week_now['macd_weekly'] > 0 and week_now['macd_weekly'] > self.rd_week.iloc[week_index-1]['macd_weekly'] > self.rd_week.iloc[week_index-2]['macd_weekly']:
                         status = 1
-                        K_max = 30
+                        # macd_all = self.rd.iloc[index-1]['macd']
+                    # if week_now['macd_weekly'] > self.rd_week.iloc[week_index-1]['macd_weekly'] > self.rd_week.iloc[week_index-2]['macd_weekly'] and week_now['macd_weekly'] > 0:
+                    #     status = 1
+                    #     macd_all = self.rd_week.iloc[week_index-1]['macd_weekly']
                 if jy.pick > 0:
                     still_day += 1
-                    K_max = max(K_max, row['K'])
                     if row['value'] < row['boll_m'] and row['value'] < max_v * 0.9:
                         status = -2
                     if row['value'] < buy_v * 0.9:
                         status = -2
                     if row['value'] < self.rd.iloc[index-1]['value'] * 0.92:
                         status = -2
-                    if still_day < 10 and row['macd'] < self.rd.iloc[index-1]['macd'] < self.rd.iloc[index-2]['macd']:
-                        status = -2
-                    if K_max > 70 and row['macd'] < self.rd.iloc[index-1]['macd'] < self.rd.iloc[index-2]['macd']:
-                        status = -2
-                    if K_max > 70 and row['K'] < 70:
-                        status = -2
-                    if row['K'] < 30 < self.rd.iloc[index-1]['K'] < self.rd.iloc[index-2]['K']:
-                        status = -2
-                    # if row['macd'] < 0 and self.rd.iloc[index-1]['macd'] < 0:
-                    #     status = -2
-                    # if self.rd_week.iloc[week_index]['macd_weekly'] < self.rd_week.iloc[week_index-1]['macd_weekly']:
-                    #     status = -2
-                    # if 10 > still_day > 5 and row['value'] < buy_v:
-                    #     status = -2
-                    # if row['macd'] < self.rd.iloc[index-1]['macd'] < self.rd.iloc[index-2]['macd']:
-                    #     status = -2
 
             if status == 1:
-                status = 1
-                # if row['boll_m'] > self.rd.iloc[index - len(macd_last)]['boll_m']:
+                status = 2
+                # if week_now['macd_weekly'] > 0:
+                #     macd_all += week_now['macd_weekly']
+                # else:
+                #     status = 0
+                # if macd_all > 0.1:
                 #     status = 2
                 # if row['macd'] > self.rd.iloc[index-1]['macd'] > self.rd.iloc[index-2]['macd'] and row['macd'] > 0:
                 #     status = 2
-                if row['K'] > self.rd.iloc[index-1]['K'] > self.rd.iloc[index-2]['K'] and row['K'] > 30:
-                    status = 2
 
             if status == 2:
                 status = 3
@@ -586,8 +560,6 @@ class mystrategy:
                             jy.all_money = 10000
                     buy_flag = 1
                     still_day = 0
-                    # if index > len(self.rd)-2:
-                    #     print(self.p_SN, 'buy')
                 status = 0
             
             if status < -1:
@@ -595,8 +567,6 @@ class mystrategy:
                     buy_flag = -1
                     jy_times += 1
                 status = 0
-            # if jy.pick > 0:
-            #     loop.append(row['value'])
             min_v = min(min_v, row['value'])
             max_v = max(max_v, row['value'])
 
@@ -609,14 +579,12 @@ class mystrategy:
                 all_p = jy.all_money / row['value']
                 jy.buy(row['value'], all_p)
                 loop.append([row['date'], row['value']])
-                # loop.append([v_trend, k_trend, macd_trend])
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
                 still_day = 0
-                # print(row['date'], row['value'], week_now['macd_weekly'], self.rd_week.iloc[week_index-1]['macd_weekly'])
-                # print(row['date'], row['value'], self.rd_week.iloc[week_index]['macd_weekly'])
-                finall = row['date']
+                print(row['date'], row['value'], week_now['macd_weekly'], self.rd_week.iloc[week_index-1]['macd_weekly'])
                 money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+                finall = row['date']
                 if index > len(self.rd)-2 and money_all > 10000:
                     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
             if buy_flag < 0:
@@ -626,18 +594,19 @@ class mystrategy:
                 loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
                 buy_flag = 0
                 still_days.append(still_day)
-                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
                 finall = ''
                 if index > len(self.rd)-3 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
                     print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
         
-        if not finall == '':
-            print('\n', self.p_SN, self.p_name, 'buy', finall , win_times, '/', jy_times, money_all)
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+        # if not finall == '':
+        #     print(self.p_SN, self.p_name, 'buy', finall , win_times, ' / ', jy_times, money_all)
         return money_all,win_times,jy_times
     
-    def way_603757(self):
+    # diff < dea to diff > dea 
+    def way_diff_dea(self):
         if self.rd.empty:
             return 0
         jy = jiaoyi()
@@ -665,9 +634,11 @@ class mystrategy:
                 return 10000, 0, 0
             if status == 0:
                 if jy.all_money > 0:
-                    if week_now['macd_weekly'] > self.rd_week.iloc[week_index-1]['macd_weekly'] > 0 > self.rd_week.iloc[week_index-2]['macd_weekly']:
+                    # if week_now['macd_weekly'] > 0 > self.rd_week.iloc[week_index-1]['macd_weekly']:
+                    #     status = 1
+                    #     macd_all = 0
+                    if row['diff'] - row['dea'] > 0 > self.rd.iloc[index-1]['diff'] - self.rd.iloc[index-1]['dea']:
                         status = 1
-                        macd_all = self.rd_week.iloc[week_index-1]['macd_weekly']
                 if jy.pick > 0:
                     still_day += 1
                     if row['value'] < row['boll_m'] and row['value'] < max_v * 0.9:
@@ -676,15 +647,20 @@ class mystrategy:
                         status = -2
                     if row['value'] < self.rd.iloc[index-1]['value'] * 0.92:
                         status = -2
+                    if row['boll_m'] < self.rd.iloc[index-1]['boll_m']:
+                        if row['diff'] - row['dea'] < 0 < self.rd.iloc[index-1]['diff'] - self.rd.iloc[index-1]['dea']:
+                            status = -2
+                        if 0 < row['macd'] < self.rd.iloc[index-1]['macd'] < self.rd.iloc[index-2]['macd'] < self.rd.iloc[index-3]['macd']:
+                            status = -2
 
             if status == 1:
-                status = 1
-                if week_now['macd_weekly'] > 0:
-                    macd_all += week_now['macd_weekly']
-                else:
-                    status = 0
-                if macd_all > 0.1:
-                    status = 2
+                status = 2
+                # if week_now['macd_weekly'] >= 0:
+                #     macd_all += week_now['macd_weekly']
+                # else:
+                #     status = 0
+                # if macd_all > 0.1 and row['macd'] > self.rd.iloc[index-1]['macd']:
+                #     status = 2
                 # if row['macd'] > self.rd.iloc[index-1]['macd'] > self.rd.iloc[index-2]['macd'] and row['macd'] > 0:
                 #     status = 2
 
@@ -747,9 +723,9 @@ class mystrategy:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
                     print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
         
-        # if not finall == '':
-        #     print(self.p_SN, self.p_name, 'buy his:', finall , win_times, ' / ', jy_times, money_all)
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+        if not finall == '':
+            print(self.p_SN, self.p_name, 'buy his:', finall , win_times, ' / ', jy_times, money_all)
         return money_all,win_times,jy_times
     
 
@@ -2072,7 +2048,7 @@ class mystrategy:
         huice = 0.0
         finall = ''
         for index, row in self.rd.iterrows():
-            if row['date'] < '2021' or row['date'] > '2027':
+            if row['date'] < '2024' or row['date'] > '2027':
                 continue
             if index < 40:
                 continue
@@ -2084,9 +2060,12 @@ class mystrategy:
                 return 10000, 0, 0
             if status == 0:
                 if jy.all_money > 0:
-                    if week_now['macd_weekly'] > self.rd_week.iloc[week_index-1]['macd_weekly'] > 0 > self.rd_week.iloc[week_index-2]['macd_weekly']:
+                    # if week_now['macd_weekly'] > 0 > self.rd_week.iloc[week_index-1]['macd_weekly']:
+                    #     status = 1
+                    #     macd_all = 0
+                    if row['macd'] > self.rd.iloc[index-2]['macd'] > 0 > self.rd.iloc[index-5]['macd'] and \
+                        row['value'] > row['boll_m'] and self.rd.iloc[index-2]['value'] < self.rd.iloc[index-2]['boll_m']:
                         status = 1
-                        macd_all = self.rd_week.iloc[week_index-1]['macd_weekly']
                 if jy.pick > 0:
                     still_day += 1
                     if row['value'] < row['boll_m'] and row['value'] < max_v * 0.9:
@@ -2097,13 +2076,13 @@ class mystrategy:
                         status = -2
 
             if status == 1:
-                status = 1
-                if week_now['macd_weekly'] > 0:
-                    macd_all += week_now['macd_weekly']
-                else:
-                    status = 0
-                if macd_all > 0.1:
-                    status = 2
+                status = 2
+                # if week_now['macd_weekly'] >= 0:
+                #     macd_all += week_now['macd_weekly']
+                # else:
+                #     status = 0
+                # if macd_all > 0.1 and row['macd'] > self.rd.iloc[index-1]['macd'] and row['boll_m'] > self.rd.iloc[index-1]['boll_m']:
+                #     status = 2
                 # if row['macd'] > self.rd.iloc[index-1]['macd'] > self.rd.iloc[index-2]['macd'] and row['macd'] > 0:
                 #     status = 2
 
@@ -2166,9 +2145,9 @@ class mystrategy:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
                     print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
         
+        money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
         # if not finall == '':
         #     print(self.p_SN, self.p_name, 'buy his:', finall , win_times, ' / ', jy_times, money_all)
-        money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
         return money_all,win_times,jy_times
     
 

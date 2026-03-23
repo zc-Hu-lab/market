@@ -281,10 +281,9 @@ class stock:
             return
         if p_CT == 'kdj':
             n_val = self.res.iloc[-1]
-            if n_val.value > n_val.boll_m:
-                if n_val.K < k_limit or n_val.rsi < rsi_limit:
-                    print(f"{self.p_SN:6}\t{self.p_name:6}\tdata:{n_val.date:12}\tvalue:{n_val.value:.2f}\tBOLL_m:{n_val.boll_m:.2f}\tMACD:{n_val.macd:.2f}"
-                        + f"\tK:{n_val.K:6.2f}\tRSI:{n_val.rsi:6.2f}\tCross:{n_val.MA_Cross:2}, {n_val.MACD_Cross:2}, {n_val.KDJ_Cross:2}")
+            if n_val.K > k_limit > self.res.iloc[-2]['K']:
+                print(f"{self.p_SN:6}\t{self.p_name:6}\tdata:{n_val.date:12}\tvalue:{n_val.value:.2f}\tBOLL_m:{n_val.boll_m:.2f}\tMACD:{n_val.macd:.2f}"
+                    + f"\tK:{n_val.K:6.2f}\tRSI:{n_val.rsi:6.2f}\tCross:{n_val.MA_Cross:2}, {n_val.MACD_Cross:2}, {n_val.KDJ_Cross:2}")
 
     def Get_KDJ(self, N=KDJ_N, M1=KDJ_M1, M2=KDJ_M2):
         data = self.data.copy()
@@ -389,7 +388,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     if args.rd:
-        rd_res = pd.DataFrame(columns=['sn', 'name', 'last', 'high', 'open', 'now', 'boll_m', 'K', 'rsi', 'xx', 'err'])
+        rd_res = pd.DataFrame(columns=['sn', 'name', 'buy', 'last', 'high', 'open', 'now', 'boll_m', 'K', 'rsi', 'xx', 'err'])
         count = 0
         for i in buy_list.split('\n')[1:-1]:
             sn = i.split(' ')[0]
@@ -411,6 +410,7 @@ if __name__ == "__main__":
             rd_res.loc[count, 'K'] = K = file_data.iloc[-1]['K']
             rd_res.loc[count, 'rsi'] = rsi = file_data.iloc[-1]['rsi']
             st.find_point(date_str)
+            rd_res.loc[count, 'buy'] = st.buy_v
             rd_res.loc[count, 'err'] = False
             if d_now < boll_m and d_now < st.max_v * 0.9: rd_res.loc[count, 'err'] = True
             if d_now < st.buy_v * 0.9: rd_res.loc[count, 'err'] = True
