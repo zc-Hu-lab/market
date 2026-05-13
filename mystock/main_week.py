@@ -252,9 +252,7 @@ def update_all_weekly_data(sn):
     updater = WeeklyDataUpdater()
 
     if sn != '':
-        print(f"更新股票代码 {sn} 的周线数据...")
-        success, message = updater.update_weekly_data(sn)
-        print(f"更新 {sn} {message}")
+        print(f"更新股票代码的周线数据...不需要参数")
         return
     
     # 从数据目录获取所有股票代码

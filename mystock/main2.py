@@ -43,7 +43,7 @@ ak.session = session
 original_get = requests.get
 requests.get = session.get
 
-ts.set_token('f56d02fa39d85879dd2ce855faee78641ca923da5d6ebe978ad8affa')
+ts.set_token('ee44782f9b546add9ef7c1c20ba63d39514b78e6e8c18e2f54539e38')
 pro = ts.pro_api()
 
 # def get_all_stocks_today() -> List[str]:
@@ -321,7 +321,7 @@ class stock:
             if n_val.K > k_limit > self.res.iloc[-2]['K'] and n_val.MA_Cross > 0 and n_val.MACD_Cross > 0 and n_val.KDJ_Cross > 0:
                 print(f"{self.p_SN:6}\t{self.p_name:6}\tdata:{n_val.date:12}\tvalue:{n_val.value:.2f}\tBOLL_m:{n_val.boll_m:.2f}\tMACD:{n_val.macd:.2f}"
                     + f"\tK:{n_val.K:6.2f}\tRSI:{n_val.rsi:6.2f}\tCross:{n_val.MA_Cross:2}, {n_val.MACD_Cross:2}, {n_val.KDJ_Cross:2}")
-            if n_val.macd > 0 > m_val.macd and n_val.boll_m > m_val.boll_m > l_val.boll_m:
+            if n_val.macd > 0 > m_val.macd and n_val.boll_m - m_val.boll_m > -0.01 * n_val.boll_m:
                 print(f"{self.p_SN:6} {self.p_name:6} data:{n_val.date:12} value:{n_val.value:.2f}\tMACD:{n_val.macd:.2f}"
                     + f" > 0 > {m_val.macd:.2f}")
                 print(f"{l_val.boll_m:.2f} , {m_val.boll_m:.2f} , {n_val.boll_m:.2f}")
