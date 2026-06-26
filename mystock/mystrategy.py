@@ -220,18 +220,14 @@ class mystrategy:
         # return self.find_min_point()
         # self.find_still_point()
         # return 1,1,1
-        # if self.p_SN == '002466': return self.way_603099()
-        # if self.p_SN == '002475': return self.way_603099()
-        # if self.p_SN == '600660': return self.way_week_macd()
-        # if self.p_SN == '601898': return self.way16()
         # if self.p_SN in black_list: return 10000,0,0
-        if self.p_SN == '603039': return self.way_603039()
-        if self.p_SN in week_macd_list: return self.way_week_macd()
-        if self.p_SN in week_macd_list2: return self.way_week_macd2()
-        if self.p_SN in day_diff_dea_list: return self.way_diff_dea()
-        if self.p_SN in day3_macd_list: return self.way_3day_macd()
-        return self.way_boll_up()
-        return self.way16()
+        # if self.p_SN == '603039': return self.way_603039()
+        # if self.p_SN in week_macd_list: return self.way_week_macd()
+        # if self.p_SN in week_macd_list2: return self.way_week_macd2()
+        # if self.p_SN in day_diff_dea_list: return self.way_diff_dea()
+        # if self.p_SN in day3_macd_list: return self.way_3day_macd()
+        # return self.way_boll_up()
+        return self.way17()
         # return self.fenxi()
 
     # macd > 0 and week_macd up
@@ -2507,6 +2503,7 @@ class mystrategy:
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
         return money_all,win_times,jy_times
     
+    # boll_m up & macd > 0 & price down
     def way16(self):
         if self.rd.empty:
             return 0
@@ -2619,6 +2616,107 @@ class mystrategy:
                 buy_flag = 0
                 still_days.append(still_day)
                 print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                finall = ''
+                if index > len(self.rd)-3 and self.p_SN in buy_list:
+                    money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+                    print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+        
+        money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+        # if not finall == '':
+        #     print(self.p_SN, self.p_name, 'buy his:', finall , win_times, ' / ', jy_times, money_all)
+        return money_all,win_times,jy_times
+    
+    # k > j , j > k so buy and k < j , j < k so sell
+    def way17(self):
+        if self.rd.empty:
+            return 0
+        jy = jiaoyi()
+        loop = []
+        status = 0
+        jy_times = 0
+        win_times = 0
+        max_v, min_v, buy_v = 0, 0, 0
+        still_day = 0
+        still_days = []
+        buy_flag = 0
+        jie = 0
+        huice = 0.0
+        finall = ''
+        for index, row in self.rd.iterrows():
+            if row['date'] < '2026' or row['date'] > '2027':
+                continue
+            if index < 40:
+                continue
+            n_val = self.rd.iloc[index-1]
+            if status == 0:
+                if jy.all_money > 0:
+                    if row['J'] > row['K'] and n_val['J'] < n_val['K']:
+                        status = 1
+                if jy.pick > 0:
+                    still_day += 1
+                    if row['value'] < row['boll_m'] and row['value'] < max_v * 0.9:
+                        status = -2
+                    if row['value'] < buy_v * 0.9:
+                        status = -2
+                    if row['value'] < self.rd.iloc[index-1]['value'] * 0.92:
+                        status = -2
+                    if row['J'] < row['K'] and n_val['J'] > n_val['K']:
+                        status = -2
+
+            if status == 1:
+                status = 2
+
+            if status == 2:
+                status = 3
+                    
+            if status > 2:
+                if jy.all_money > 1:
+                    if jy.all_money < 10000:
+                        jie += 10000 - jy.all_money
+                        jy.all_money = 10000
+                    else:
+                        if jie < jy.all_money - 10000:
+                            jy.all_money -= jie
+                            jie = 0
+                        else:
+                            jie -= jy.all_money - 10000
+                            jy.all_money = 10000
+                    buy_flag = 1
+                    still_day = 0
+                status = 0
+            
+            if status < -1:
+                if jy.pick > 0:
+                    buy_flag = -1
+                    jy_times += 1
+                status = 0
+            min_v = min(min_v, row['value'])
+            max_v = max(max_v, row['value'])
+
+            if jy.pick > 0:
+                if row['value'] < max_v:
+                    temp = 1 - row['value'] / max_v
+                    huice = max(huice, temp)
+
+            if buy_flag > 0:
+                all_p = jy.all_money / row['value']
+                jy.buy(row['value'], all_p)
+                loop.append([row['date'], row['value']])
+                buy_v = max_v = min_v = row['value']
+                buy_flag = 0
+                still_day = 0
+                money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+                finall = row['date']
+                if index > len(self.rd)-3 and money_all > 10000:
+                    print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+            if buy_flag < 0:
+                if row['value'] > buy_v:
+                    win_times += 1
+                jy.sell(row['value'], jy.pick)
+                loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
+                buy_flag = 0
+                still_days.append(still_day)
+                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
                 finall = ''
                 if index > len(self.rd)-3 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie

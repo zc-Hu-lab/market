@@ -43,7 +43,7 @@ ak.session = session
 original_get = requests.get
 requests.get = session.get
 
-ts.set_token('f56d02fa39d85879dd2ce855faee78641ca923da5d6ebe978ad8affa')
+ts.set_token('c460bd080ed35b5dfff1d86c7c8f0a5e0373611d9eba451e8e834f00')
 pro = ts.pro_api()
 
 # def get_all_stocks_today() -> List[str]:
@@ -315,13 +315,21 @@ class stock:
         if len(self.res) < 30:
             return
         if p_CT == 'kdj':
+            # k_flag,macd_flag = 0,0
             n_val = self.res.iloc[-1]
             m_val = self.res.iloc[-2]
             l_val = self.res.iloc[-3]
+            k_val = self.res.iloc[-4]
+            # if n_val.macd > m_val.macd > l_val.macd > 0 > k_val.macd and n_val.boll_m > m_val.boll_m:
+            #     print(f"{self.p_SN:6} data:{n_val.date:12} value:{n_val.value:.2f} MACD:{n_val.macd:.2f}"
+            #         + f" > {m_val.macd:.2f} > {l_val.macd:.2f} > 0 > {k_val.macd:.2f}")
+            #     print(f"{l_val.boll_m:.2f} , {m_val.boll_m:.2f} , {n_val.boll_m:.2f}")
             if n_val.K > k_limit > self.res.iloc[-2]['K'] and n_val.MA_Cross > 0 and n_val.MACD_Cross > 0 and n_val.KDJ_Cross > 0:
+                # k_flag = 1
                 print(f"{self.p_SN:6}\t{self.p_name:6}\tdata:{n_val.date:12}\tvalue:{n_val.value:.2f}\tBOLL_m:{n_val.boll_m:.2f}\tMACD:{n_val.macd:.2f}"
                     + f"\tK:{n_val.K:6.2f}\tRSI:{n_val.rsi:6.2f}\tCross:{n_val.MA_Cross:2}, {n_val.MACD_Cross:2}, {n_val.KDJ_Cross:2}")
-            if n_val.macd > 0 > m_val.macd and n_val.boll_m > m_val.boll_m > l_val.boll_m:
+            if n_val.macd > 0 > m_val.macd > l_val.macd and n_val.boll_m > m_val.boll_m > l_val.boll_m:
+                # macd_flag = 1
                 print(f"{self.p_SN:6} {self.p_name:6} data:{n_val.date:12} value:{n_val.value:.2f}\tMACD:{n_val.macd:.2f}"
                     + f" > 0 > {m_val.macd:.2f}")
                 print(f"{l_val.boll_m:.2f} , {m_val.boll_m:.2f} , {n_val.boll_m:.2f}")
@@ -506,7 +514,7 @@ if __name__ == "__main__":
                 p_SN = i
                 # 显示进度
                 percent = int((count / count_all) * 100)
-                if percent in [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] and percent not in printed_percents:
+                if percent in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100] and percent not in printed_percents:
                     print(f"\n🎯 {percent}% 完成\n")
                     printed_percents.add(percent)
                 count += 1
