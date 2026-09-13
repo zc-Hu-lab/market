@@ -23,7 +23,7 @@ CONFIG = {
     'BOLL_K': 2,
     'RSI_WINDOW': 14,
     'WEEKLY_DIR': '/opt/zack/master/week_data',
-    'TUSHARE_TOKEN': 'f56d02fa39d85879dd2ce855faee78641ca923da5d6ebe978ad8affa',
+    'TUSHARE_TOKEN': 'c460bd080ed35b5dfff1d86c7c8f0a5e0373611d9eba451e8e834f00',
 }
 
 class RateLimiter:

@@ -221,14 +221,22 @@ class mystrategy:
         # self.find_still_point()
         # return 1,1,1
         # if self.p_SN in black_list: return 10000,0,0
-        # if self.p_SN == '603039': return self.way_603039()
-        # if self.p_SN in week_macd_list: return self.way_week_macd()
-        # if self.p_SN in week_macd_list2: return self.way_week_macd2()
-        # if self.p_SN in day_diff_dea_list: return self.way_diff_dea()
-        # if self.p_SN in day3_macd_list: return self.way_3day_macd()
+        if self.p_SN == '603039': return self.way_603039()
+        if self.p_SN in week_macd_list: return self.way_week_macd()
+        if self.p_SN in week_macd_list2: return self.way_week_macd2()
+        if self.p_SN in day_diff_dea_list: return self.way_diff_dea()
+        if self.p_SN in day3_macd_list: return self.way_3day_macd()
         # return self.way_boll_up()
-        return self.way17()
+        return self.way19()
         # return self.fenxi()
+
+# way11: total:244, avg:12445.890332459503, win:37.68, tm_all:7.17
+# way12: total:244, avg:17367.705902132097, win:37.04, tm_all:20.51
+# way13: total:244, avg:18058.295970037543, win:40.38, tm_all:13.43
+# way14: total:244, avg:13974.563324747192, win:42.78, tm_all:23.36
+# way15: total:244, avg:14471.334876492014, win:40.90, tm_all:12.14
+# way16: total:244, avg:15984.484660202865, win:38.44, tm_all:18.58
+# way17: total:244, avg:10074.136058645012, win:33.02, tm_all:2.66
 
     # macd > 0 and week_macd up
     def way_603039(self):
@@ -371,7 +379,7 @@ class mystrategy:
         return money_all,win_times,jy_times
     
     # week_macd up and macd > 0
-    def way_week_macd(self):
+    def way_week_macd(self, dt_start = '2026', dt_end = '2027'):
         if self.rd.empty:
             return 0
         jy = jiaoyi()
@@ -380,30 +388,25 @@ class mystrategy:
         jy_times = 0
         win_times = 0
         max_v, min_v, buy_v = 0, 0, 0
-        still_day = 0
-        still_days = []
         buy_flag = 0
         jie = 0
-        huice = 0.0
-        finall = ''
         for index, row in self.rd.iterrows():
-            if row['date'] < '2024' or row['date'] > '2027':
+            if row['date'] < dt_start or row['date'] > dt_end:
                 continue
             if index < 40:
                 continue
             if self.rd_week is None:
                 return 10000, 0, 0
             week_now, week_index = find_previous_weekly_data(row['date'], self.rd_week)
+            n_val = self.rd.iloc[index-1]
             if week_now is None:
                 print(self.p_SN, 'no weekly data')
                 return 10000, 0, 0
             if status == 0:
                 if jy.all_money > 0:
-                    if week_now['macd_weekly'] > self.rd_week.iloc[week_index-1]['macd_weekly'] > 0 > self.rd_week.iloc[week_index-2]['macd_weekly']:
+                    if row['macd'] > n_val['macd'] and row['macd'] > 0:
                         status = 1
-                        macd_all = self.rd_week.iloc[week_index-1]['macd_weekly']
                 if jy.pick > 0:
-                    still_day += 1
                     if row['value'] < row['boll_m'] and row['value'] < max_v * 0.9:
                         status = -2
                     if row['value'] < buy_v * 0.9:
@@ -412,20 +415,10 @@ class mystrategy:
                         status = -2
 
             if status == 1:
-                status = 1
-                if week_now['macd_weekly'] > 0:
-                    macd_all += week_now['macd_weekly']
-                else:
-                    status = 0
-                if macd_all > 0.1:
-                    status = 2
-                # if row['macd'] > self.rd.iloc[index-1]['macd'] > self.rd.iloc[index-2]['macd'] and row['macd'] > 0:
-                #     status = 2
+                status = 2
 
             if status == 2:
                 status = 3
-                if week_now['macd_weekly'] > self.rd_week.iloc[week_index-1]['macd_weekly'] > 0:
-                    status = 3
                     
             if status > 2:
                 if jy.all_money > 1:
@@ -440,7 +433,6 @@ class mystrategy:
                             jie -= jy.all_money - 10000
                             jy.all_money = 10000
                     buy_flag = 1
-                    still_day = 0
                 status = 0
             
             if status < -1:
@@ -451,21 +443,14 @@ class mystrategy:
             min_v = min(min_v, row['value'])
             max_v = max(max_v, row['value'])
 
-            if jy.pick > 0:
-                if row['value'] < max_v:
-                    temp = 1 - row['value'] / max_v
-                    huice = max(huice, temp)
-
             if buy_flag > 0:
                 all_p = jy.all_money / row['value']
                 jy.buy(row['value'], all_p)
                 loop.append([row['date'], row['value']])
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
-                still_day = 0
                 # print(row['date'], row['value'], week_now['macd_weekly'], self.rd_week.iloc[week_index-1]['macd_weekly'])
                 money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                finall = row['date']
                 if index > len(self.rd)-2 and money_all > 10000:
                     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
             if buy_flag < 0:
@@ -474,18 +459,9 @@ class mystrategy:
                 jy.sell(row['value'], jy.pick)
                 loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
                 buy_flag = 0
-                still_days.append(still_day)
                 # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
-                finall = ''
-                if index > len(self.rd)-3 and self.p_SN in buy_list:
-                    money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
         
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-        # if not finall == '':
-        #     print(self.p_SN, self.p_name, 'buy', finall , win_times, ' / ', jy_times, money_all)
-        if money_all > 30000:
-            print(self.p_SN, self.p_name, win_times, ' / ', jy_times, money_all)
         return money_all,win_times,jy_times
     
     # week_macd up and week_macd > 0
@@ -1935,11 +1911,11 @@ class mystrategy:
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
                 still_day = 0
-                print(row['date'], row['value'], self.rd_week.iloc[week_index]['macd_weekly'])
+                # print(row['date'], row['value'], self.rd_week.iloc[week_index]['macd_weekly'])
                 if index > len(self.rd)-2:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    if money_all > 9000 and win_times > 0.3 * jy_times:
-                        print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # if money_all > 9000 and win_times > 0.3 * jy_times:
+                    #     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
             if buy_flag < 0:
                 if row['value'] > buy_v:
                     win_times += 1
@@ -1947,10 +1923,10 @@ class mystrategy:
                 loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
                 buy_flag = 0
                 still_days.append(still_day)
-                print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
                 if index > len(self.rd)-2 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
             # print(row['date'], status)
         
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
@@ -2071,12 +2047,12 @@ class mystrategy:
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
                 still_day = 0
-                print(row['date'], row['value'], week_now['boll_m_weekly'] - self.rd_week.iloc[week_index-1]['boll_m_weekly'])
+                # print(row['date'], row['value'], week_now['boll_m_weekly'] - self.rd_week.iloc[week_index-1]['boll_m_weekly'])
                 # print(row['date'], row['value'], self.rd_week.iloc[week_index]['macd_weekly'])
                 if index > len(self.rd)-2:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    if money_all > 9000 and win_times > 0.3 * jy_times:
-                        print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # if money_all > 9000 and win_times > 0.3 * jy_times:
+                    #     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
             if buy_flag < 0:
                 if row['value'] > buy_v:
                     win_times += 1
@@ -2084,10 +2060,10 @@ class mystrategy:
                 loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
                 buy_flag = 0
                 still_days.append(still_day)
-                print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
                 if index > len(self.rd)-2 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
             # print(row['date'], status)
         
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
@@ -2189,12 +2165,12 @@ class mystrategy:
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
                 still_day = 0
-                print(row['date'], row['value'], week_now['boll_m_weekly'] - self.rd_week.iloc[week_index-1]['boll_m_weekly'])
+                # print(row['date'], row['value'], week_now['boll_m_weekly'] - self.rd_week.iloc[week_index-1]['boll_m_weekly'])
                 # print(row['date'], row['value'], self.rd_week.iloc[week_index]['macd_weekly'])
                 if index > len(self.rd)-2:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    if money_all > 9000 and win_times > 0.3 * jy_times:
-                        print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # if money_all > 9000 and win_times > 0.3 * jy_times:
+                    #     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
             if buy_flag < 0:
                 if row['value'] > buy_v:
                     win_times += 1
@@ -2202,10 +2178,10 @@ class mystrategy:
                 loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
                 buy_flag = 0
                 still_days.append(still_day)
-                print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
                 if index > len(self.rd)-2 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
             # print(row['date'], status)
         
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
@@ -2349,8 +2325,8 @@ class mystrategy:
                 # print(row['date'], row['value'], self.rd_week.iloc[week_index]['macd_weekly'])
                 finall = row['date']
                 money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                if index > len(self.rd)-2 and money_all > 10000:
-                    print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                # if index > len(self.rd)-2 and money_all > 10000:
+                #     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
             if buy_flag < 0:
                 if row['value'] > buy_v:
                     win_times += 1
@@ -2362,11 +2338,11 @@ class mystrategy:
                 finall = ''
                 if index > len(self.rd)-3 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
             # print(row['date'], status)
         
-        if not finall == '':
-            print('\n', self.p_SN, self.p_name, 'buy', finall , win_times, '/', jy_times, money_all)
+        # if not finall == '':
+        #     print('\n', self.p_SN, self.p_name, 'buy', finall , win_times, '/', jy_times, money_all)
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
         # if money_all < 9000:
         #     print(self.p_SN, money_all)
@@ -2481,25 +2457,25 @@ class mystrategy:
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
                 still_day = 0
-                print(row['date'], row['value'], week_now['macd_weekly'], self.rd_week.iloc[week_index-1]['macd_weekly'])
+                # print(row['date'], row['value'], week_now['macd_weekly'], self.rd_week.iloc[week_index-1]['macd_weekly'])
                 finall = row['date']
                 if index > len(self.rd)-2:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    if money_all > 9000 and win_times > 0.3 * jy_times:
-                        print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # if money_all > 9000 and win_times > 0.3 * jy_times:
+                    #     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
             if buy_flag < 0:
                 if row['value'] > buy_v:
                     win_times += 1
                 jy.sell(row['value'], jy.pick)
                 buy_flag = 0
-                print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
                 finall = ''
                 if index > len(self.rd)-2 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
         
-        if not finall == '':
-            print(self.p_SN, self.p_name, 'buy', finall , win_times, ' / ', jy_times, money_all)
+        # if not finall == '':
+        #     print(self.p_SN, self.p_name, 'buy', finall , win_times, ' / ', jy_times, money_all)
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
         return money_all,win_times,jy_times
     
@@ -2603,11 +2579,11 @@ class mystrategy:
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
                 still_day = 0
-                print(row['date'], row['value'], week_now['macd_weekly'], self.rd_week.iloc[week_index-1]['macd_weekly'])
+                # print(row['date'], row['value'], week_now['macd_weekly'], self.rd_week.iloc[week_index-1]['macd_weekly'])
                 money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
                 finall = row['date']
-                if index > len(self.rd)-3 and money_all > 10000:
-                    print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                # if index > len(self.rd)-3 and money_all > 10000:
+                #     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
             if buy_flag < 0:
                 if row['value'] > buy_v:
                     win_times += 1
@@ -2615,11 +2591,11 @@ class mystrategy:
                 loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
                 buy_flag = 0
                 still_days.append(still_day)
-                print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
                 finall = ''
                 if index > len(self.rd)-3 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
         
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
         # if not finall == '':
@@ -2664,7 +2640,120 @@ class mystrategy:
                         status = -2
 
             if status == 1:
-                status = 2
+                status = 0
+                if row['boll_m'] > self.rd.iloc[index-1]['boll_m'] > self.rd.iloc[index-2]['boll_m']:
+                    status = 2
+
+            if status == 2:
+                status = 0
+                if row['macd'] > 0:
+                    status = 3
+                    
+            if status > 2:
+                if jy.all_money > 1:
+                    if jy.all_money < 10000:
+                        jie += 10000 - jy.all_money
+                        jy.all_money = 10000
+                    else:
+                        if jie < jy.all_money - 10000:
+                            jy.all_money -= jie
+                            jie = 0
+                        else:
+                            jie -= jy.all_money - 10000
+                            jy.all_money = 10000
+                    buy_flag = 1
+                    still_day = 0
+                status = 0
+            
+            if status < -1:
+                if jy.pick > 0:
+                    buy_flag = -1
+                    jy_times += 1
+                status = 0
+            min_v = min(min_v, row['value'])
+            max_v = max(max_v, row['value'])
+
+            if jy.pick > 0:
+                if row['value'] < max_v:
+                    temp = 1 - row['value'] / max_v
+                    huice = max(huice, temp)
+
+            if buy_flag > 0:
+                all_p = jy.all_money / row['value']
+                jy.buy(row['value'], all_p)
+                loop.append([row['date'], row['value']])
+                buy_v = max_v = min_v = row['value']
+                buy_flag = 0
+                still_day = 0
+                money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+                finall = row['date']
+                # print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                # if index > len(self.rd)-3 and money_all > 10000:
+                #     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+            if buy_flag < 0:
+                if row['value'] > buy_v:
+                    win_times += 1
+                jy.sell(row['value'], jy.pick)
+                loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
+                buy_flag = 0
+                still_days.append(still_day)
+                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                finall = ''
+                if index > len(self.rd)-3 and self.p_SN in buy_list:
+                    money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+                    # print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+        
+        money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+        # if not finall == '':
+        #     print(self.p_SN, self.p_name, 'buy his:', finall , win_times, ' / ', jy_times, money_all)
+        return money_all,win_times,jy_times
+
+    # D > K > J then J > K > D, if J < K and J < D so sell
+    def way18(self):
+        if self.rd.empty:
+            return 0
+        jy = jiaoyi()
+        loop = []
+        status = 0
+        jy_times = 0
+        win_times = 0
+        max_v, min_v, buy_v = 0, 0, 0
+        still_day = 0
+        still_days = []
+        buy_flag = 0
+        jie = 0
+        huice = 0.0
+        finall = ''
+        for index, row in self.rd.iterrows():
+            if row['date'] < '2026' or row['date'] > '2027':
+                continue
+            if index < 40:
+                continue
+            n_val = self.rd.iloc[index-1]
+            if status == 0:
+                if jy.all_money > 0:
+                    if row['K'] < 20 and n_val['rsi'] < 30:
+                        status = 1
+                    if row['KDJ_Cross'] == 1 and row['MACD_Cross'] == 1 and row['MA_Cross'] == 1:
+                        status = 3
+                if jy.pick > 0:
+                    still_day += 1
+                    # if row['value'] < row['boll_m'] and row['value'] < max_v * 0.9:
+                    #     status = -2
+                    # if row['value'] < buy_v * 0.9:
+                    #     status = -2
+                    # if row['value'] < n_val['value'] * 0.92:
+                    #     status = -2
+                    if row['J'] < row['K'] and row['J'] < row['D']:
+                        status = -2
+                    if row['KDJ_Cross'] == -1:
+                        status = -2
+
+            if status == 1:
+                if row['KDJ_Cross'] == 1:
+                    status = 2
+                if row['MACD_Cross'] == -1 or row['KDJ_Cross'] == -1:
+                    status = 0
 
             if status == 2:
                 status = 3
@@ -2705,10 +2794,11 @@ class mystrategy:
                 buy_v = max_v = min_v = row['value']
                 buy_flag = 0
                 still_day = 0
-                money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+                money_all = jy.all_money + jy.pick * row['value'] - jie
                 finall = row['date']
-                if index > len(self.rd)-3 and money_all > 10000:
-                    print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                # print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                # if index > len(self.rd)-3 and money_all > 10000:
+                #     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
             if buy_flag < 0:
                 if row['value'] > buy_v:
                     win_times += 1
@@ -2716,17 +2806,120 @@ class mystrategy:
                 loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
                 buy_flag = 0
                 still_days.append(still_day)
-                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days \n')
+                # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days ', jy.all_money, '\n')
                 finall = ''
                 if index > len(self.rd)-3 and self.p_SN in buy_list:
                     money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
-                    print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
         
         money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
         # if not finall == '':
         #     print(self.p_SN, self.p_name, 'buy his:', finall , win_times, ' / ', jy_times, money_all)
         return money_all,win_times,jy_times
+
+    def way19(self):
+            if self.rd.empty:
+                return 0
+            jy = jiaoyi()
+            loop = []
+            status = 0
+            jy_times = 0
+            win_times = 0
+            max_v, min_v, buy_v = 0, 0, 0
+            still_day = 0
+            still_days = []
+            buy_flag = 0
+            jie = 0
+            huice = 0.0
+            finall = ''
+            for index, row in self.rd.iterrows():
+                if row['date'] < '2026' or row['date'] > '2027':
+                    continue
+                if index < 40:
+                    continue
+                n_val = self.rd.iloc[index-1]
+                if status == 0:
+                    if jy.all_money > 0:
+                        if row['boll_m'] > n_val['boll_m']:
+                            status = 1
+                    if jy.pick > 0:
+                        still_day += 1
+                        if row['value'] < max_v * 0.9:
+                            status = -2
+                        if row['value'] > buy_v:
+                            status = -2
+                        if still_day > 3:
+                            status = -2
     
+                if status == 1:
+                    status = 0
+                    if row['J'] > row['K'] > n_val['K']:
+                        status = 2
+    
+                if status == 2:
+                    status = 0
+                    if row['macd'] > n_val['macd'] and row['macd'] > 0:
+                        status = 3
+                        
+                if status > 2:
+                    if jy.all_money > 1:
+                        if jy.all_money < 10000:
+                            jie += 10000 - jy.all_money
+                            jy.all_money = 10000
+                        else:
+                            if jie < jy.all_money - 10000:
+                                jy.all_money -= jie
+                                jie = 0
+                            else:
+                                jie -= jy.all_money - 10000
+                                jy.all_money = 10000
+                        buy_flag = 1
+                        still_day = 0
+                    status = 0
+                
+                if status < -1:
+                    if jy.pick > 0:
+                        buy_flag = -1
+                        jy_times += 1
+                    status = 0
+                min_v = min(min_v, row['value'])
+                max_v = max(max_v, row['value'])
+    
+                if jy.pick > 0:
+                    if row['value'] < max_v:
+                        temp = 1 - row['value'] / max_v
+                        huice = max(huice, temp)
+    
+                if buy_flag > 0:
+                    all_p = jy.all_money / row['value']
+                    jy.buy(row['value'], all_p)
+                    loop.append([row['date'], row['value']])
+                    buy_v = max_v = min_v = row['value']
+                    buy_flag = 0
+                    still_day = 0
+                    money_all = jy.all_money + jy.pick * row['value'] - jie
+                    finall = row['date']
+                    # print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                    # if index > len(self.rd)-3 and money_all > 10000:
+                    #     print(self.p_SN, self.p_name, 'buy', row['date'] , win_times, ' / ', jy_times, money_all)
+                if buy_flag < 0:
+                    if row['value'] > buy_v:
+                        win_times += 1
+                    jy.sell(row['value'], jy.pick)
+                    loop.append([row['date'], row['value'], row['K'], row['rsi'], jy.all_money])
+                    buy_flag = 0
+                    still_days.append(still_day)
+                    # print(row['date'], ' sell ' , f"{((row['value'] - buy_v) / buy_v)*100:.2f}%" , still_day, 'days ', jy.all_money, '\n')
+                    finall = ''
+                    if index > len(self.rd)-3 and self.p_SN in buy_list:
+                        money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+                        # print(self.p_SN, self.p_name, 'sell', row['date'] , win_times, ' / ', jy_times, money_all)
+            
+            money_all = jy.all_money + jy.pick * self.rd.iloc[-1]['value'] - jie
+            # if not finall == '':
+            #     print(self.p_SN, self.p_name, 'buy his:', finall , win_times, ' / ', jy_times, money_all)
+            return money_all,win_times,jy_times
+         
 
     # 5%
     def fenxi(self):

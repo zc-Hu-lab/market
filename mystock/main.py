@@ -15,6 +15,9 @@ from datetime import datetime as dt, date, timedelta
 from typing import List
 from my_name import black_list
 
+from get_buypoint import get_buypoint
+from mystrategy import mystrategy
+
 k_limit = 30
 rsi_limit = 30
 start_date = '2010-01-01'
@@ -109,8 +112,8 @@ import threading
 _rate_lock = threading.Lock()
 _last_call_time = None
 _call_count = 0
-_CALL_LIMIT = 50
-_WINDOW = 60  # 60秒窗口
+_CALL_LIMIT = 49
+_WINDOW = 61  # 60秒窗口
 
 def wait_for_rate_limit():
     """等待直到可以调用API"""
@@ -137,20 +140,6 @@ def wait_for_rate_limit():
 
 def get_A_data_from_python(p_SN):
     data = pd.DataFrame(columns=['date', 'now', 'close', 'high', 'low', 'open', 'vol', 'vor', 'tor'])
-    # try:
-    #     wait_for_rate_limit()
-    #     dt_data = ak.stock_zh_a_hist(symbol=p_SN)
-    #     data['date'] = pd.to_datetime(dt_data['日期'])
-    #     data['now'] = dt_data['收盘']
-    #     data['close'] = dt_data['收盘']
-    #     data['high'] = dt_data['最高']
-    #     data['low'] = dt_data['最低']
-    #     data['open'] = dt_data['开盘']
-    #     data['vol'] = dt_data['成交量']
-    #     data['vor'] = dt_data['成交额']
-    #     data['tor'] = dt_data['换手率']
-    #     data = data[data['date'] >= start_date]
-    # except Exception as e:
     wait_for_rate_limit()
     try:
         ts_code = f"{p_SN}.SH" if p_SN.startswith('6') else f"{p_SN}.BJ" if p_SN.startswith('9') else f"{p_SN}.SZ"
@@ -170,6 +159,7 @@ def get_A_data_from_python(p_SN):
         # time.sleep(0.5)
     except Exception as e2:
         print(f"tushare获取{p_SN}失败: {e2}")
+        time.sleep(1)
         return None
     if not data.empty and 'date' in data.columns:
         data['date'] = pd.to_datetime(data['date']).dt.strftime('%Y-%m-%d')
@@ -209,7 +199,7 @@ class stock:
                 # print(self.res['date'].iloc[-1] , str(date.today()), file_name)
                 self.data = get_A_data_from_python(self.p_SN)
                 if self.data is None or self.data.empty:
-                    return
+                    return None
                 update_size = self.res.index.size
                 if not self.data['close'].iloc[:update_size].reset_index(drop=True).equals(self.res['value'].iloc[:update_size].reset_index(drop=True)):
                     print(f"{self.p_SN} 数据更新")
@@ -250,6 +240,7 @@ class stock:
             self.res['obv'] = self.Get_OBV()
             self.calculate_cross_indicators()
             self.res.to_csv(file_name, index=False, encoding='utf-8-sig')
+        return self.res
     
     def Update_Data(self, all_data):
         file_name = f'/opt/zack/master/data/{self.p_SN}.csv'
@@ -312,6 +303,8 @@ class stock:
         return n_val
 
     def Get_SomeData(self, p_CT):
+        if self.res.empty:
+            return
         if len(self.res) < 30:
             return
         if p_CT == 'kdj':
@@ -324,7 +317,7 @@ class stock:
             #     print(f"{self.p_SN:6} data:{n_val.date:12} value:{n_val.value:.2f} MACD:{n_val.macd:.2f}"
             #         + f" > {m_val.macd:.2f} > {l_val.macd:.2f} > 0 > {k_val.macd:.2f}")
             #     print(f"{l_val.boll_m:.2f} , {m_val.boll_m:.2f} , {n_val.boll_m:.2f}")
-            if n_val.K > k_limit > self.res.iloc[-2]['K'] and n_val.MA_Cross > 0 and n_val.MACD_Cross > 0 and n_val.KDJ_Cross > 0:
+            if n_val.K > k_limit > m_val.K and n_val.MA_Cross > 0 and n_val.MACD_Cross > 0 and n_val.KDJ_Cross > 0:
                 # k_flag = 1
                 print(f"{self.p_SN:6}\t{self.p_name:6}\tdata:{n_val.date:12}\tvalue:{n_val.value:.2f}\tBOLL_m:{n_val.boll_m:.2f}\tMACD:{n_val.macd:.2f}"
                     + f"\tK:{n_val.K:6.2f}\tRSI:{n_val.rsi:6.2f}\tCross:{n_val.MA_Cross:2}, {n_val.MACD_Cross:2}, {n_val.KDJ_Cross:2}")
@@ -333,6 +326,10 @@ class stock:
                 print(f"{self.p_SN:6} {self.p_name:6} data:{n_val.date:12} value:{n_val.value:.2f}\tMACD:{n_val.macd:.2f}"
                     + f" > 0 > {m_val.macd:.2f}")
                 print(f"{l_val.boll_m:.2f} , {m_val.boll_m:.2f} , {n_val.boll_m:.2f}")
+            # if n_val.J > n_val.K and m_val.J < m_val.K and l_val.K < k_limit and n_val.macd > m_val.macd > l_val.macd:
+            #     print(f"{self.p_SN:6} {self.p_name:6} data:{n_val.date:12} value:{n_val.value:.2f}\t"
+            #           + f"MACD:{l_val.macd:.2f} , {m_val.macd:.2f} , {n_val.macd:.2f}")
+            #     print(f"{l_val.boll_m:.2f} , {m_val.boll_m:.2f} , {n_val.boll_m:.2f}")
 
     def Get_KDJ(self, N=KDJ_N, M1=KDJ_M1, M2=KDJ_M2):
         data = self.data.copy()
@@ -427,7 +424,7 @@ class stock:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--sn', type=str, default = '')
-    parser.add_argument('--ck', type=str, default = '')
+    parser.add_argument('--ck', action="store_const", const=True, default = False)
     parser.add_argument('--ct', type=str, default = 'kdj')
     parser.add_argument('--st', type=bool, default = False)
     parser.add_argument('--dw', type=bool, default = False)
@@ -494,12 +491,10 @@ if __name__ == "__main__":
         if os.path.exists(folder_path):
             all_names = os.listdir(folder_path)
             for file_ in all_names:
-                if args.ck == 'all' or f"{args.ck}.csv" == file_:
-                    print(file_)
-                    ck_handle = pd.read_csv(f"{folder_path}/{file_}", encoding="utf-8-sig")
-                    if ck_handle['date'].iloc[1] < start_date:
-                        os.system(f"rm {folder_path}/{file_}")
-                        print(f"rm {file_}")
+                i = file_.split('.csv')[0]
+                p_SN = i
+                st = get_buypoint(p_SN)
+                buy_flag = st.get_buy_point()
     
     if args.sn:
         p_list = get_all_stocks_today()
@@ -530,11 +525,12 @@ if __name__ == "__main__":
                 p_SN = i
             if p_SN is not None:
                 st = stock(p_SN, '')
-                st.Get_Data(flag=args.flag)
+                res = st.Get_Data(flag=args.flag)
+                if res is None:
+                    continue
                 st.Get_SomeData(args.ct)
     
     if args.fd:
-        from mystrategy import mystrategy
         sum,count,win_count, win_all = 0,0,0,0
         sum2,count2,win_count2 = 0,0,0
         tm_all,tm_all2 = 0,0
@@ -561,6 +557,8 @@ if __name__ == "__main__":
                     win_all += win_count
                     sum += res
                     tm_all += tm
+                    if res < 10000:
+                        print(f"{p_SN} {res} {win_count}/{tm}")
             if count == 0: count = 1
             if tm_all == 0: tm_all = 1
             print(f"\ntotal:{count}, avg:{sum/count}, win:{win_all/tm_all*100:.2f}, tm_all:{tm_all/count:.2f}")
