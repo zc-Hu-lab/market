@@ -494,7 +494,8 @@ if __name__ == "__main__":
                 i = file_.split('.csv')[0]
                 p_SN = i
                 st = get_buypoint(p_SN)
-                buy_flag = st.get_buy_point()
+                if st.valid:
+                    buy_flag = st.get_buy_point()
     
     if args.sn:
         p_list = get_all_stocks_today()
